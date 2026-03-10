@@ -229,7 +229,10 @@
       .bubble-content h1,
       .bubble-content h2,
       .bubble-content h3,
-      .bubble-content h4 {
+      .bubble-content h4,
+      .bubble-content h5,
+      .bubble-content h6,
+      .bubble-content hr {
         margin: 0;
       }
 
@@ -255,12 +258,34 @@
         padding: 12px 14px;
         border-radius: 14px;
         background: rgba(31, 28, 22, 0.08);
+        white-space: pre;
+        position: relative;
       }
 
       .bubble-content pre code {
         display: block;
         padding: 0;
         background: transparent;
+        white-space: inherit;
+      }
+
+      .bubble-content pre[data-language]::before {
+        content: attr(data-language);
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(13, 107, 95, 0.12);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .bubble-content hr {
+        border: none;
+        border-top: 1px solid rgba(127, 108, 84, 0.24);
       }
 
       .bubble-content blockquote {
@@ -431,7 +456,7 @@
 
         <div class="section">
           <label for="message">Message</label>
-          <textarea id="message">帮我给这个智能体设计一个验证清单</textarea>
+          <textarea id="message" placeholder="帮我给这个智能体设计一个验证清单"></textarea>
           <div class="toolbar">
             <button id="sendButton">发送消息</button>
             <button id="runWorkerButton" class="secondary">运行 Worker</button>
@@ -619,6 +644,45 @@
         sessionInput.value = conversation.sessionId;
       }
 
+      function getConversationDisplayTimestamp(conversation) {
+        const firstMessage = Array.isArray(conversation?.messages) && conversation.messages.length > 0
+          ? conversation.messages.reduce((earliest, message) => {
+            const messageTime = Date.parse(message?.createdAt || '');
+
+            if (Number.isNaN(messageTime)) {
+              return earliest;
+            }
+
+            if (earliest === null || messageTime < earliest) {
+              return messageTime;
+            }
+
+            return earliest;
+          }, null)
+          : null;
+        const createdAtTime = Date.parse(conversation?.createdAt || '');
+
+        if (firstMessage !== null) {
+          return firstMessage;
+        }
+
+        if (!Number.isNaN(createdAtTime)) {
+          return createdAtTime;
+        }
+
+        return 0;
+      }
+
+      function getConversationDisplayTime(conversation) {
+        const timestamp = getConversationDisplayTimestamp(conversation);
+
+        if (timestamp <= 0) {
+          return '';
+        }
+
+        return new Date(timestamp).toISOString();
+      }
+
       function renderConversationList() {
         conversationListNode.innerHTML = '';
 
@@ -629,12 +693,13 @@
 
         [...conversations]
           .sort((left, right) => {
-            const leftTime = Date.parse(left.lastActiveAt || '') || 0;
-            const rightTime = Date.parse(right.lastActiveAt || '') || 0;
+            const leftTime = getConversationDisplayTimestamp(left);
+            const rightTime = getConversationDisplayTimestamp(right);
             return rightTime - leftTime;
           })
           .forEach((conversation) => {
             const previewMessage = conversation.messages[conversation.messages.length - 1];
+            const displayTime = getConversationDisplayTime(conversation);
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `conversation-item${conversation.id === activeConversationId ? ' active' : ''}`;
@@ -642,7 +707,7 @@
               <strong>${escapeHtml(conversation.id)}</strong>
               <span>${escapeHtml(conversation.source)} / ${escapeHtml(conversation.userId)}</span>
               <span>${escapeHtml(previewMessage?.content?.slice(0, 42) || '暂无消息')}</span>
-              <span>${escapeHtml(conversation.sessionId || '未绑定 session')} | ${escapeHtml(formatTimestamp(conversation.lastActiveAt))}</span>
+              <span>${escapeHtml(conversation.sessionId || '未绑定 session')} | ${escapeHtml(formatTimestamp(displayTime))}</span>
             `;
             button.addEventListener('click', () => {
               selectConversation(conversation.id);
@@ -659,7 +724,6 @@
         }
 
         activeConversationId = conversation.id;
-        conversation.lastActiveAt = normalizeDate(new Date().toISOString());
         persistConversationState();
         syncInputsFromConversation(conversation);
         renderConversationList();
@@ -828,73 +892,198 @@
           return '<p></p>';
         }
 
-        const codeBlocks = [];
-        let escaped = escapeHtml(normalized).replace(/```([\s\S]*?)```/g, (_, code) => {
-          const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
-          codeBlocks.push(`<pre><code>${code.replace(/^\n+|\n+$/g, '')}</code></pre>`);
+        const lines = normalized.split('\n');
+        const blocks = [];
+        let index = 0;
+
+        while (index < lines.length) {
+          const line = lines[index];
+          const trimmedLine = line.trim();
+
+          if (!trimmedLine) {
+            index += 1;
+            continue;
+          }
+
+          const codeFenceMatch = trimmedLine.match(/^```([A-Za-z0-9_-]+)?\s*$/);
+
+          if (codeFenceMatch) {
+            const language = codeFenceMatch[1] || '';
+            const codeLines = [];
+            index += 1;
+
+            while (index < lines.length && !lines[index].trim().match(/^```\s*$/)) {
+              codeLines.push(lines[index]);
+              index += 1;
+            }
+
+            if (index < lines.length) {
+              index += 1;
+            }
+
+            blocks.push(renderCodeBlock(codeLines.join('\n'), language));
+            continue;
+          }
+
+          const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
+
+          if (headingMatch) {
+            const level = Math.min(headingMatch[1].length, 6);
+            blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+            index += 1;
+            continue;
+          }
+
+          if (/^([-*_])(?:\s*\1){2,}\s*$/.test(trimmedLine)) {
+            blocks.push('<hr />');
+            index += 1;
+            continue;
+          }
+
+          if (/^>\s?/.test(trimmedLine)) {
+            const quoteLines = [];
+
+            while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+              quoteLines.push(lines[index].trim().replace(/^>\s?/, ''));
+              index += 1;
+            }
+
+            blocks.push(`<blockquote>${renderMarkdown(quoteLines.join('\n'))}</blockquote>`);
+            continue;
+          }
+
+          if (/^[-*+]\s+/.test(trimmedLine) || /^\d+\.\s+/.test(trimmedLine)) {
+            const listResult = renderMarkdownList(lines, index);
+            blocks.push(listResult.html);
+            index = listResult.nextIndex;
+            continue;
+          }
+
+          const paragraphLines = [];
+
+          while (index < lines.length && !isMarkdownBlockBoundary(lines[index])) {
+            paragraphLines.push(lines[index].trim());
+            index += 1;
+          }
+
+          if (paragraphLines.length > 0) {
+            blocks.push(`<p>${paragraphLines.map((paragraphLine) => renderInlineMarkdown(paragraphLine)).join('<br />')}</p>`);
+          }
+        }
+
+        return blocks.join('');
+      }
+
+      function isMarkdownBlockBoundary(line) {
+        const trimmedLine = line.trim();
+
+        return trimmedLine.length === 0
+          || /^```/.test(trimmedLine)
+          || /^(#{1,6})\s+/.test(trimmedLine)
+          || /^>\s?/.test(trimmedLine)
+          || /^([-*_])(?:\s*\1){2,}\s*$/.test(trimmedLine)
+          || /^[-*+]\s+/.test(trimmedLine)
+          || /^\d+\.\s+/.test(trimmedLine);
+      }
+
+      function renderMarkdownList(lines, startIndex) {
+        const ordered = /^\d+\.\s+/.test(lines[startIndex].trim());
+        const itemPattern = ordered ? /^\d+\.\s+([\s\S]+)$/ : /^[-*+]\s+([\s\S]+)$/;
+        const items = [];
+        let index = startIndex;
+
+        while (index < lines.length) {
+          const line = lines[index];
+          const trimmedLine = line.trim();
+
+          if (!trimmedLine) {
+            break;
+          }
+
+          const itemMatch = trimmedLine.match(itemPattern);
+
+          if (!itemMatch) {
+            break;
+          }
+
+          const itemLines = [itemMatch[1]];
+          index += 1;
+
+          while (index < lines.length) {
+            const continuationLine = lines[index];
+            const trimmedContinuationLine = continuationLine.trim();
+
+            if (!trimmedContinuationLine) {
+              break;
+            }
+
+            if (itemPattern.test(trimmedContinuationLine) || isMarkdownBlockBoundary(continuationLine)) {
+              break;
+            }
+
+            itemLines.push(trimmedContinuationLine);
+            index += 1;
+          }
+
+          items.push(`<li>${itemLines.map((itemLine) => renderInlineMarkdown(itemLine)).join('<br />')}</li>`);
+        }
+
+        return {
+          html: ordered ? `<ol>${items.join('')}</ol>` : `<ul>${items.join('')}</ul>`,
+          nextIndex: index
+        };
+      }
+
+      function renderCodeBlock(code, language) {
+        const normalizedCode = code.replace(/^\n+|\n+$/g, '');
+        const languageLabel = language.trim();
+        const languageAttribute = languageLabel ? ` data-language="${escapeHtml(languageLabel)}"` : '';
+        const classAttribute = languageLabel ? ` class="language-${escapeHtml(languageLabel)}"` : '';
+
+        return `<pre${languageAttribute}><code${classAttribute}>${escapeHtml(normalizedCode)}</code></pre>`;
+      }
+
+      function renderInlineMarkdown(value) {
+        const placeholders = [];
+        let escaped = escapeHtml(value);
+
+        escaped = escaped.replace(/`([^`\n]+)`/g, (_, code) => {
+          const placeholder = `%%INLINE_${placeholders.length}%%`;
+          placeholders.push(`<code>${code}</code>`);
+          return placeholder;
+        });
+
+        escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, text, url) => {
+          const placeholder = `%%INLINE_${placeholders.length}%%`;
+          placeholders.push(`<a href="${url}" target="_blank" rel="noreferrer noopener">${renderInlineMarkdown(text)}</a>`);
           return placeholder;
         });
 
         escaped = escaped
-          .replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
-          .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
-          .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
-          .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
-          .replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>')
+          .replace(/~~(.+?)~~/g, '<del>$1</del>')
           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
           .replace(/__(.+?)__/g, '<strong>$1</strong>')
           .replace(/(^|[^*])\*(?!\s)(.+?)(?<!\s)\*(?!\*)/g, '$1<em>$2</em>')
-          .replace(/(^|[^_])_(?!\s)(.+?)(?<!\s)_(?!_)/g, '$1<em>$2</em>')
-          .replace(/`([^`]+)`/g, '<code>$1</code>')
-          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+          .replace(/(^|[^_])_(?!\s)(.+?)(?<!\s)_(?!_)/g, '$1<em>$2</em>');
 
-        escaped = escaped
-          .split('\n\n')
-          .map((block) => renderMarkdownBlock(block))
-          .join('');
-
-        codeBlocks.forEach((block, index) => {
-          escaped = escaped.replace(`__CODE_BLOCK_${index}__`, block);
+        placeholders.forEach((html, index) => {
+          escaped = escaped.replace(`%%INLINE_${index}%%`, html);
         });
 
         return escaped;
       }
 
-      function renderMarkdownBlock(block) {
-        const trimmedBlock = block.trim();
-
-        if (!trimmedBlock) {
-          return '';
-        }
-
-        if (/^__CODE_BLOCK_\d+__$/.test(trimmedBlock)) {
-          return trimmedBlock;
-        }
-
-        if (/^<h[1-4]>[\s\S]+<\/h[1-4]>$/.test(trimmedBlock) || /^<blockquote>[\s\S]+<\/blockquote>$/.test(trimmedBlock)) {
-          return trimmedBlock;
-        }
-
-        const lines = trimmedBlock.split('\n');
-
-        if (lines.every((line) => /^[-*]\s+/.test(line))) {
-          return `<ul>${lines.map((line) => `<li>${line.replace(/^[-*]\s+/, '')}</li>`).join('')}</ul>`;
-        }
-
-        if (lines.every((line) => /^\d+\.\s+/.test(line))) {
-          return `<ol>${lines.map((line) => `<li>${line.replace(/^\d+\.\s+/, '')}</li>`).join('')}</ol>`;
-        }
-
-        return `<p>${lines.join('<br />')}</p>`;
-      }
-
       async function sendImMessage() {
         const sentAt = new Date().toISOString();
-        const conversation = ensureConversation({
+        const conversation = getActiveConversation() || ensureConversation({
           source: sourceInput.value.trim(),
           userId: userInput.value.trim(),
           sessionId: sessionInput.value.trim()
         });
+
+        conversation.source = sourceInput.value.trim() || conversation.source;
+        conversation.userId = userInput.value.trim() || conversation.userId;
+        conversation.sessionId = sessionInput.value.trim() || conversation.sessionId;
         const payload = {
           source: conversation.source,
           conversationId: conversation.id,
@@ -927,6 +1116,7 @@
             sessionInput.value = conversation.sessionId;
           }
           appendBubble('user', '用户输入', payload.message, `${payload.source} / ${payload.conversationId}`, sentAt);
+          messageInput.value = '';
           if (replyText) {
             appendBubble('assistant', '被动回复', replyText, `intent: ${intentText}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`, new Date().toISOString());
           }
@@ -945,11 +1135,14 @@
       }
 
       async function refreshTasks() {
-        const conversation = ensureConversation({
+        const conversation = getActiveConversation() || ensureConversation({
           source: sourceInput.value.trim(),
           userId: userInput.value.trim(),
           sessionId: sessionInput.value.trim()
         });
+        conversation.source = sourceInput.value.trim() || conversation.source;
+        conversation.userId = userInput.value.trim() || conversation.userId;
+        conversation.sessionId = sessionInput.value.trim() || conversation.sessionId;
         const source = conversation.source;
         const conversationId = conversation.id;
 
@@ -964,11 +1157,9 @@
         if (typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0) {
           conversation.sessionId = payload.sessionId.trim();
           sessionInput.value = conversation.sessionId;
+          persistConversationState();
+          renderConversationList();
         }
-
-        conversation.lastActiveAt = normalizeDate(new Date().toISOString());
-        persistConversationState();
-        renderConversationList();
 
         taskListNode.innerHTML = '';
 
@@ -1048,11 +1239,14 @@
       }
 
       function connectSse() {
-        const conversation = ensureConversation({
+        const conversation = getActiveConversation() || ensureConversation({
           source: sourceInput.value.trim(),
           userId: userInput.value.trim(),
           sessionId: sessionInput.value.trim()
         });
+        conversation.source = sourceInput.value.trim() || conversation.source;
+        conversation.userId = userInput.value.trim() || conversation.userId;
+        conversation.sessionId = sessionInput.value.trim() || conversation.sessionId;
         const sessionId = conversation.sessionId || sessionInput.value.trim();
 
         if (!sessionId) {
