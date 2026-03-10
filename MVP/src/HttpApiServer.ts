@@ -98,6 +98,28 @@ export class HttpApiServer {
       return;
     }
 
+    if (method === 'GET' && url.pathname === '/adapters/im/messages') {
+      const source = this.requireQueryString(url, 'source');
+      const conversationId = this.requireQueryString(url, 'conversationId');
+      const session = await this.sessionManager.findSessionByExternalMapping(source, conversationId);
+      const messages = await this.runtime.listConversationMessages(source, conversationId);
+
+      this.sendJson(response, 200, {
+        source,
+        conversationId,
+        sessionId: session?.id,
+        messages
+      });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/adapters/im/conversations') {
+      const source = this.optionalString(url.searchParams.get('source'));
+      const conversations = await this.runtime.listImConversations(source);
+      this.sendJson(response, 200, { conversations });
+      return;
+    }
+
     if (method === 'GET' && url.pathname === '/adapters/im/tasks') {
       const source = this.requireQueryString(url, 'source');
       const conversationId = this.requireQueryString(url, 'conversationId');
@@ -141,6 +163,7 @@ export class HttpApiServer {
 
     if (method === 'POST' && pathSegments.length === 3 && pathSegments[0] === 'sessions' && pathSegments[2] === 'clear') {
       const session = await this.sessionManager.clearSession(pathSegments[1], !this.parseBoolean(url.searchParams.get('keepClaude')));
+      await this.runtime.appendSystemConversationMessage(session.id, '会话已清空。');
       this.sendJson(response, 200, session);
       return;
     }

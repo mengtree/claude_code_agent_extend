@@ -18,7 +18,6 @@
 
       * {
         box-sizing: border-box;
-      }
 
       body {
         margin: 0;
@@ -503,7 +502,7 @@
       const interruptButton = document.getElementById('interruptButton');
       const clearSessionButton = document.getElementById('clearSessionButton');
 
-      const CONVERSATION_STORAGE_KEY = 'agentextend-im-demo-conversations-v1';
+      const MESSAGE_CACHE_STORAGE_KEY = 'agentextend-im-demo-message-cache-v1';
       const ACTIVE_CONVERSATION_STORAGE_KEY = 'agentextend-im-demo-active-conversation-v1';
 
       let eventSource;
@@ -512,9 +511,9 @@
       let conversations = [];
       let activeConversationId = '';
 
-      function loadConversationState() {
+      async function loadConversationState() {
         try {
-          const storedConversations = window.localStorage.getItem(CONVERSATION_STORAGE_KEY);
+          const storedConversations = window.localStorage.getItem(MESSAGE_CACHE_STORAGE_KEY);
           const storedActiveConversationId = window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY);
           const parsed = storedConversations ? JSON.parse(storedConversations) : [];
 
@@ -522,24 +521,18 @@
             ? parsed.map((item, index) => sanitizeConversation(item, index))
             : [];
 
-          localMessageSequence = conversations.reduce((maxValue, conversation) => {
-            const conversationMax = conversation.messages.reduce((innerMax, message) => {
-              return Math.max(innerMax, Number(message.sequence) || 0);
-            }, 0);
+          recalculateLocalMessageSequence();
 
-            return Math.max(maxValue, conversationMax);
-          }, 0);
-
-          if (storedActiveConversationId && conversations.some((item) => item.id === storedActiveConversationId)) {
+          if (storedActiveConversationId) {
             activeConversationId = storedActiveConversationId;
-          } else if (conversations[0]) {
-            activeConversationId = conversations[0].id;
           }
         } catch (error) {
-          console.error('Failed to load conversations', error);
+          console.error('Failed to restore active conversation', error);
           conversations = [];
           activeConversationId = '';
         }
+
+        await refreshConversationList({ skipStatusUpdate: true });
       }
 
       function sanitizeConversation(value, index = 0) {
@@ -558,12 +551,17 @@
         return {
           id: conversationId,
           source: typeof value?.source === 'string' && value.source.trim().length > 0 ? value.source.trim() : 'browser-demo',
+          conversationId: typeof value?.conversationId === 'string' && value.conversationId.trim().length > 0
+            ? value.conversationId.trim()
+            : conversationId,
           userId: typeof value?.userId === 'string' && value.userId.trim().length > 0 ? value.userId.trim() : 'tester',
           sessionId: typeof value?.sessionId === 'string' ? value.sessionId.trim() : '',
           createdAt,
           lastActiveAt,
           messages,
-          seenPushIds
+          seenPushIds,
+          previewText: typeof value?.previewText === 'string' ? value.previewText : '',
+          isDraft: value?.isDraft === true
         };
       }
 
@@ -583,7 +581,7 @@
       }
 
       function persistConversationState() {
-        window.localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(conversations));
+        window.localStorage.setItem(MESSAGE_CACHE_STORAGE_KEY, JSON.stringify(conversations));
 
         if (activeConversationId) {
           window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, activeConversationId);
@@ -605,24 +603,38 @@
         if (!conversation) {
           conversation = sanitizeConversation({
             id: requestedId,
+            conversationId: overrides.conversationId ?? requestedId,
             source: overrides.source ?? (sourceInput.value.trim() || 'browser-demo'),
             userId: overrides.userId ?? (userInput.value.trim() || 'tester'),
             sessionId: overrides.sessionId ?? sessionInput.value.trim(),
             createdAt: new Date().toISOString(),
             lastActiveAt: new Date().toISOString(),
             messages: [],
-            seenPushIds: []
+            seenPushIds: [],
+            previewText: overrides.previewText ?? '',
+            isDraft: overrides.isDraft !== false
           }, conversations.length);
           conversations.unshift(conversation);
         }
 
         conversation.source = typeof overrides.source === 'string' ? overrides.source.trim() : (sourceInput.value.trim() || conversation.source);
+        conversation.conversationId = typeof overrides.conversationId === 'string'
+          ? overrides.conversationId.trim()
+          : (conversation.conversationId || conversation.id);
         conversation.userId = typeof overrides.userId === 'string' ? overrides.userId.trim() : (userInput.value.trim() || conversation.userId);
 
         if (typeof overrides.sessionId === 'string') {
           conversation.sessionId = overrides.sessionId.trim();
         } else if (sessionInput.value.trim()) {
           conversation.sessionId = sessionInput.value.trim();
+        }
+
+        if (typeof overrides.previewText === 'string') {
+          conversation.previewText = overrides.previewText;
+        }
+
+        if (typeof overrides.isDraft === 'boolean') {
+          conversation.isDraft = overrides.isDraft;
         }
 
         conversation.lastActiveAt = normalizeDate(overrides.lastActiveAt || new Date().toISOString());
@@ -639,31 +651,179 @@
         }
 
         sourceInput.value = conversation.source;
-        conversationInput.value = conversation.id;
+        conversationInput.value = conversation.conversationId || conversation.id;
         userInput.value = conversation.userId;
         sessionInput.value = conversation.sessionId;
       }
 
+      function recalculateLocalMessageSequence() {
+        localMessageSequence = conversations.reduce((maxValue, conversation) => {
+          const conversationMax = conversation.messages.reduce((innerMax, message) => {
+            return Math.max(innerMax, Number(message.sequence) || 0);
+          }, 0);
+
+          return Math.max(maxValue, conversationMax);
+        }, 0);
+      }
+
+      function mergeRemoteConversations(remoteConversations) {
+        const existingConversationById = new Map(
+          conversations.map((conversation) => [conversation.id, conversation])
+        );
+        const normalizedRemoteConversations = remoteConversations.map((value, index) => {
+          const existingConversation = existingConversationById.get(value.id);
+
+          return sanitizeConversation({
+            ...value,
+            userId: existingConversation?.userId || value.userId || 'tester',
+            messages: existingConversation?.messages || [],
+            seenPushIds: existingConversation?.seenPushIds || [],
+            previewText: typeof value?.previewText === 'string'
+              ? value.previewText
+              : (existingConversation?.previewText || ''),
+            isDraft: false
+          }, index);
+        });
+        const remoteConversationIds = new Set(normalizedRemoteConversations.map((conversation) => conversation.id));
+        const preservedDrafts = conversations
+          .filter((conversation) => {
+            if (remoteConversationIds.has(conversation.id)) {
+              return false;
+            }
+
+            return conversation.isDraft || conversation.messages.length > 0 || conversation.id === activeConversationId;
+          })
+          .map((conversation, index) => sanitizeConversation({
+            ...conversation,
+            isDraft: true,
+            lastActiveAt: conversation.lastActiveAt || new Date(Date.now() - index).toISOString()
+          }, normalizedRemoteConversations.length + index));
+
+        conversations = [...normalizedRemoteConversations, ...preservedDrafts];
+        recalculateLocalMessageSequence();
+
+        if (!activeConversationId && conversations[0]) {
+          activeConversationId = conversations[0].id;
+        }
+
+        if (activeConversationId && !conversations.some((conversation) => conversation.id === activeConversationId)) {
+          activeConversationId = conversations[0]?.id || '';
+        }
+
+        persistConversationState();
+      }
+
+      async function refreshConversationList(options = {}) {
+        const skipStatusUpdate = options.skipStatusUpdate === true;
+
+        try {
+          const payload = await fetchJson('/adapters/im/conversations');
+          const remoteConversations = Array.isArray(payload.conversations) ? payload.conversations : [];
+
+          mergeRemoteConversations(remoteConversations);
+          renderConversationList();
+
+          const activeConversation = getActiveConversation();
+          if (activeConversation) {
+            syncInputsFromConversation(activeConversation);
+            await loadConversationHistory(activeConversation, { skipStatusUpdate: true });
+          }
+
+          if (!skipStatusUpdate) {
+            setStatus(`已从后端同步 ${remoteConversations.length} 个对话。`);
+          }
+        } catch (error) {
+          console.error('Failed to load conversations', error);
+
+          if (!skipStatusUpdate) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatus(`加载对话列表失败：${message}`);
+          }
+        }
+      }
+
+      async function loadConversationHistory(conversation, options = {}) {
+        const skipStatusUpdate = options.skipStatusUpdate === true;
+
+        if (!conversation || !conversation.source || !(conversation.conversationId || conversation.id) || conversation.isDraft) {
+          return;
+        }
+
+        try {
+          const payload = await fetchJson(
+            `/adapters/im/messages?source=${encodeURIComponent(conversation.source)}&conversationId=${encodeURIComponent(conversation.conversationId || conversation.id)}`
+          );
+          const remoteMessages = Array.isArray(payload.messages)
+            ? payload.messages.map((message, index) => sanitizeMessage({
+              id: message.id,
+              kind: message.kind,
+              title: message.title,
+              content: message.content,
+              meta: message.meta,
+              createdAt: message.createdAt,
+              sequence: index + 1
+            }, index))
+            : [];
+
+          conversation.messages = remoteMessages;
+          conversation.seenPushIds = remoteMessages
+            .filter((message) => message.kind === 'push')
+            .map((message) => message.id);
+          conversation.previewText = remoteMessages[remoteMessages.length - 1]?.content || conversation.previewText;
+          conversation.lastActiveAt = remoteMessages[remoteMessages.length - 1]?.createdAt || conversation.lastActiveAt;
+          conversation.isDraft = false;
+
+          if (typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0) {
+            conversation.sessionId = payload.sessionId.trim();
+          }
+
+          recalculateLocalMessageSequence();
+          persistConversationState();
+          renderConversationList();
+          renderFeed();
+
+          if (!skipStatusUpdate && conversation.id === activeConversationId) {
+            setStatus(`已同步对话历史: ${conversation.conversationId || conversation.id}`);
+          }
+        } catch (error) {
+          console.error('Failed to load conversation history', error);
+
+          if (!skipStatusUpdate && conversation.id === activeConversationId) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatus(`加载消息历史失败：${message}`);
+          }
+        }
+      }
+
       function getConversationDisplayTimestamp(conversation) {
-        const firstMessage = Array.isArray(conversation?.messages) && conversation.messages.length > 0
-          ? conversation.messages.reduce((earliest, message) => {
+        const latestMessage = Array.isArray(conversation?.messages) && conversation.messages.length > 0
+          ? conversation.messages.reduce((latest, message) => {
             const messageTime = Date.parse(message?.createdAt || '');
 
             if (Number.isNaN(messageTime)) {
-              return earliest;
+              return latest;
             }
 
-            if (earliest === null || messageTime < earliest) {
+            if (latest === null || messageTime > latest) {
               return messageTime;
             }
 
-            return earliest;
+            return latest;
           }, null)
           : null;
+        const lastActiveAtTime = Date.parse(conversation?.lastActiveAt || '');
         const createdAtTime = Date.parse(conversation?.createdAt || '');
 
-        if (firstMessage !== null) {
-          return firstMessage;
+        if (latestMessage !== null && !Number.isNaN(lastActiveAtTime)) {
+          return Math.max(latestMessage, lastActiveAtTime);
+        }
+
+        if (latestMessage !== null) {
+          return latestMessage;
+        }
+
+        if (!Number.isNaN(lastActiveAtTime)) {
+          return lastActiveAtTime;
         }
 
         if (!Number.isNaN(createdAtTime)) {
@@ -700,13 +860,16 @@
           .forEach((conversation) => {
             const previewMessage = conversation.messages[conversation.messages.length - 1];
             const displayTime = getConversationDisplayTime(conversation);
+            const previewText = previewMessage?.content?.slice(0, 42)
+              || conversation.previewText?.slice(0, 42)
+              || (conversation.isDraft ? '尚未发送消息' : '后端已同步，等待新消息');
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `conversation-item${conversation.id === activeConversationId ? ' active' : ''}`;
             button.innerHTML = `
-              <strong>${escapeHtml(conversation.id)}</strong>
+              <strong>${escapeHtml(conversation.conversationId || conversation.id)}</strong>
               <span>${escapeHtml(conversation.source)} / ${escapeHtml(conversation.userId)}</span>
-              <span>${escapeHtml(previewMessage?.content?.slice(0, 42) || '暂无消息')}</span>
+              <span>${escapeHtml(previewText)}</span>
               <span>${escapeHtml(conversation.sessionId || '未绑定 session')} | ${escapeHtml(formatTimestamp(displayTime))}</span>
             `;
             button.addEventListener('click', () => {
@@ -739,6 +902,7 @@
         } else {
           setStatus(`已切换对话: ${conversation.id}`);
         }
+        void loadConversationHistory(conversation, { skipStatusUpdate: true });
         refreshTasks();
       }
 
@@ -767,6 +931,7 @@
           sequence: localMessageSequence
         });
 
+        conversation.previewText = content ?? '';
         conversation.lastActiveAt = normalizedCreatedAt;
         persistConversationState();
         renderConversationList();
@@ -846,9 +1011,12 @@
         resetConversationState();
         ensureConversation({
           id: nextConversationId,
+          conversationId: nextConversationId,
           source: sourceInput.value.trim() || 'browser-demo',
           userId: userInput.value.trim() || 'tester',
-          sessionId: ''
+          sessionId: '',
+          previewText: '',
+          isDraft: true
         });
         renderFeed();
         setStatus(`已创建新对话: ${nextConversationId}`);
@@ -1075,18 +1243,23 @@
 
       async function sendImMessage() {
         const sentAt = new Date().toISOString();
+        const requestedConversationId = conversationInput.value.trim() || buildConversationId();
         const conversation = getActiveConversation() || ensureConversation({
+          id: requestedConversationId,
+          conversationId: requestedConversationId,
           source: sourceInput.value.trim(),
           userId: userInput.value.trim(),
-          sessionId: sessionInput.value.trim()
+          sessionId: sessionInput.value.trim(),
+          isDraft: true
         });
 
         conversation.source = sourceInput.value.trim() || conversation.source;
         conversation.userId = userInput.value.trim() || conversation.userId;
         conversation.sessionId = sessionInput.value.trim() || conversation.sessionId;
+        conversation.conversationId = conversationInput.value.trim() || conversation.conversationId || conversation.id;
         const payload = {
           source: conversation.source,
-          conversationId: conversation.id,
+          conversationId: conversation.conversationId || conversation.id,
           userId: conversation.userId,
           sessionId: conversation.sessionId || undefined,
           message: messageInput.value.trim()
@@ -1113,6 +1286,7 @@
 
           if (typeof data.sessionId === 'string' && data.sessionId.trim().length > 0) {
             conversation.sessionId = data.sessionId.trim();
+            conversation.isDraft = false;
             sessionInput.value = conversation.sessionId;
           }
           appendBubble('user', '用户输入', payload.message, `${payload.source} / ${payload.conversationId}`, sentAt);
@@ -1121,6 +1295,11 @@
             appendBubble('assistant', '被动回复', replyText, `intent: ${intentText}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`, new Date().toISOString());
           }
           persistConversationState();
+          await refreshConversationList({ skipStatusUpdate: true });
+          const syncedConversation = getActiveConversation();
+          if (syncedConversation) {
+            await loadConversationHistory(syncedConversation, { skipStatusUpdate: true });
+          }
           renderConversationList();
           setStatus(replyText
             ? `已发送，当前 session: ${sessionInput.value}`
@@ -1144,7 +1323,7 @@
         conversation.userId = userInput.value.trim() || conversation.userId;
         conversation.sessionId = sessionInput.value.trim() || conversation.sessionId;
         const source = conversation.source;
-        const conversationId = conversation.id;
+        const conversationId = conversation.conversationId || conversation.id;
 
         if (!source || !conversationId) {
           taskListNode.innerHTML = '<div class="task-item">缺少 source 或 conversationId，无法查看任务。</div>';
@@ -1229,7 +1408,11 @@
             persistConversationState();
             renderConversationList();
           }
-          appendBubble('push', '系统消息', '会话已清空。', sessionId, new Date().toISOString(), `system-clear:${sessionId}:${Date.now()}`);
+          await refreshConversationList({ skipStatusUpdate: true });
+          const syncedConversation = getActiveConversation();
+          if (syncedConversation) {
+            await loadConversationHistory(syncedConversation, { skipStatusUpdate: true });
+          }
           refreshTasks();
           setStatus('会话已清空。');
         } catch (error) {
@@ -1317,20 +1500,35 @@
       runWorkerButton.addEventListener('click', runWorkerOnce);
       interruptButton.addEventListener('click', interruptSession);
       clearSessionButton.addEventListener('click', clearSession);
-      loadConversationState();
-      if (!getActiveConversation()) {
-        ensureConversation({
-          id: conversationInput.value.trim() || buildConversationId(),
-          source: sourceInput.value.trim() || 'browser-demo',
-          userId: userInput.value.trim() || 'tester',
-          sessionId: sessionInput.value.trim()
-        });
-      } else {
-        syncInputsFromConversation(getActiveConversation());
+
+      async function initializePage() {
+        await loadConversationState();
+
+        if (!getActiveConversation()) {
+          const initialConversationId = conversationInput.value.trim() || buildConversationId();
+          ensureConversation({
+            id: initialConversationId,
+            conversationId: initialConversationId,
+            source: sourceInput.value.trim() || 'browser-demo',
+            userId: userInput.value.trim() || 'tester',
+            sessionId: sessionInput.value.trim(),
+            isDraft: true
+          });
+        } else {
+          syncInputsFromConversation(getActiveConversation());
+        }
+
+        renderConversationList();
+        renderFeed();
+        try {
+          await refreshTasks();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(`初始化任务列表失败：${message}`);
+        }
       }
-      renderConversationList();
-      renderFeed();
-      refreshTasks();
+
+      void initializePage();
     </script>
   </body>
 </html>

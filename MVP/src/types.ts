@@ -165,6 +165,20 @@ export interface PushMessage {
   createdAt: string;
 }
 
+export type ConversationMessageKind = 'user' | 'assistant' | 'push';
+
+export interface ConversationMessage {
+  id: string;
+  sessionId: string;
+  source: string;
+  conversationId: string;
+  kind: ConversationMessageKind;
+  title: string;
+  content: string;
+  meta?: string;
+  createdAt: string;
+}
+
 export interface ImAdapterRequest {
   source: string;
   conversationId: string;

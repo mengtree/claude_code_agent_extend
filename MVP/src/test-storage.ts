@@ -42,6 +42,38 @@ async function testStaleSessionsLockIsRecovered(): Promise<void> {
   }
 }
 
+async function testConversationMessagesPersistAndReload(): Promise<void> {
+  const workspacePath = join(process.cwd(), '.tmp-storage-conversation-history-test');
+  await removeDirectoryWithRetry(workspacePath);
+
+  try {
+    const storage = new Storage(workspacePath);
+    await storage.initialize();
+
+    await storage.withConversationMessagesLock(async (messages) => {
+      messages.push({
+        id: 'conversation-message-1',
+        sessionId: 'session-1',
+        source: 'browser-demo',
+        conversationId: 'room-1',
+        kind: 'user',
+        title: '用户输入',
+        content: '请记录这条消息',
+        meta: 'browser-demo / room-1',
+        createdAt: '2026-03-10T00:00:00.000Z'
+      });
+      await storage.writeConversationMessagesUnsafe(messages);
+    });
+
+    const savedMessages = await storage.loadConversationMessages();
+    assert.equal(savedMessages.length, 1);
+    assert.equal(savedMessages[0].conversationId, 'room-1');
+    assert.equal(savedMessages[0].content, '请记录这条消息');
+  } finally {
+    await removeDirectoryWithRetry(workspacePath);
+  }
+}
+
 async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -61,6 +93,7 @@ async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
 
 async function main(): Promise<void> {
   await testStaleSessionsLockIsRecovered();
+  await testConversationMessagesPersistAndReload();
   console.log('Storage tests passed');
 }
 

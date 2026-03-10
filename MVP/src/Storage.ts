@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
-import { AgentSession, IncomingMessageJob, PushMessage, ScheduleTask, SessionTask } from './types';
+import { AgentSession, ConversationMessage, IncomingMessageJob, PushMessage, ScheduleTask, SessionTask } from './types';
 import { DebugLogger } from './DebugLogger';
 
 const LOCK_WAIT_TIMEOUT_MS = 10000;
@@ -13,6 +13,7 @@ export class Storage {
   readonly sessionsFilePath: string;
   readonly queuesDirectoryPath: string;
   readonly incomingMessagesFilePath: string;
+  readonly conversationMessagesFilePath: string;
   readonly pushEventsFilePath: string;
   readonly locksDirectoryPath: string;
   readonly schedulesDirectoryPath: string;
@@ -23,6 +24,7 @@ export class Storage {
     this.sessionsFilePath = join(this.rootPath, 'sessions.json');
     this.queuesDirectoryPath = join(this.rootPath, 'queues');
     this.incomingMessagesFilePath = join(this.rootPath, 'incoming-messages.json');
+    this.conversationMessagesFilePath = join(this.rootPath, 'conversation-messages.json');
     this.pushEventsFilePath = join(this.rootPath, 'push-events.jsonl');
     this.locksDirectoryPath = join(this.rootPath, 'locks');
     this.schedulesDirectoryPath = join(this.rootPath, 'schedules');
@@ -37,6 +39,7 @@ export class Storage {
 
     await this.ensureJsonFile(this.sessionsFilePath, []);
     await this.ensureJsonFile(this.incomingMessagesFilePath, []);
+    await this.ensureJsonFile(this.conversationMessagesFilePath, []);
 
     if (!(await this.exists(this.pushEventsFilePath))) {
       await writeFile(this.pushEventsFilePath, '', 'utf8');
@@ -61,6 +64,16 @@ export class Storage {
   async saveIncomingMessages(messages: IncomingMessageJob[]): Promise<void> {
     await this.initialize();
     await this.writeJson(this.incomingMessagesFilePath, messages);
+  }
+
+  async loadConversationMessages(): Promise<ConversationMessage[]> {
+    await this.initialize();
+    return this.readJson<ConversationMessage[]>(this.conversationMessagesFilePath, []);
+  }
+
+  async saveConversationMessages(messages: ConversationMessage[]): Promise<void> {
+    await this.initialize();
+    await this.writeJson(this.conversationMessagesFilePath, messages);
   }
 
   async loadQueue(sessionId: string): Promise<SessionTask[]> {
@@ -178,6 +191,20 @@ export class Storage {
 
   async writeIncomingMessagesUnsafe(messages: IncomingMessageJob[]): Promise<void> {
     await this.writeJson(this.incomingMessagesFilePath, messages);
+  }
+
+  async withConversationMessagesLock<T>(operation: (messages: ConversationMessage[]) => Promise<T> | T): Promise<T> {
+    await this.initialize();
+
+    return this.withExclusiveLock('conversation-messages', async () => {
+      const messages = await this.readJson<ConversationMessage[]>(this.conversationMessagesFilePath, []);
+      const result = await operation(structuredClone(messages));
+      return result;
+    });
+  }
+
+  async writeConversationMessagesUnsafe(messages: ConversationMessage[]): Promise<void> {
+    await this.writeJson(this.conversationMessagesFilePath, messages);
   }
 
   async withNamedLock<T>(lockName: string, operation: () => Promise<T>): Promise<T> {

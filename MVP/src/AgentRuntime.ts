@@ -8,6 +8,7 @@ import { TaskQueueService } from './TaskQueueService';
 import {
   AcceptedIncomingMessageReply,
   AgentSession,
+  ConversationMessage,
   IncomingMessageJob,
   IncomingMessageRequest,
   IntentParseResult,
@@ -81,6 +82,15 @@ export class AgentRuntime {
       externalConversationId: request.externalConversationId
     });
 
+    await this.appendConversationMessagesForRequest(session, request, {
+      id: randomUUID(),
+      kind: 'user',
+      title: '用户输入',
+      content: request.message,
+      meta: this.buildConversationMeta(request.externalSource, request.externalConversationId),
+      createdAt: new Date().toISOString()
+    });
+
     const tasks = await this.taskQueueService.list(session.id);
     const intent = await this.intentParser.parse(request.message, session, tasks);
     DebugLogger.info('input.intent_resolved', {
@@ -92,7 +102,20 @@ export class AgentRuntime {
       taskSummary: intent.taskSummary
     });
 
-    return this.executeIntent(session, request.message, intent);
+    const reply = await this.executeIntent(session, request.message, intent);
+
+    if (reply.reply) {
+      await this.appendConversationMessagesForRequest(session, request, {
+        id: randomUUID(),
+        kind: 'assistant',
+        title: '被动回复',
+        content: reply.reply,
+        meta: this.buildAssistantMeta(reply.intent, reply.queuedTask?.id),
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    return reply;
   }
 
   async processPendingIncomingMessages(): Promise<number> {
@@ -205,6 +228,73 @@ export class AgentRuntime {
 
   async listPushMessages(limit: number, sessionId?: string): Promise<PushMessage[]> {
     return this.storage.loadPushMessages(limit, sessionId);
+  }
+
+  async listConversationMessages(source: string, conversationId: string): Promise<ConversationMessage[]> {
+    const messages = await this.storage.loadConversationMessages();
+
+    return messages
+      .filter((message) => message.source === source && message.conversationId === conversationId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async listImConversations(source?: string): Promise<Array<{
+    id: string;
+    source: string;
+    conversationId: string;
+    sessionId: string;
+    createdAt: string;
+    updatedAt: string;
+    lastActiveAt: string;
+    currentTaskId?: string;
+    interruptRequested: boolean;
+    previewText?: string;
+  }>> {
+    const sessions = await this.sessionManager.listSessions();
+    const messages = await this.storage.loadConversationMessages();
+
+    return sessions
+      .flatMap((session) =>
+        session.externalMappings
+          .filter((mapping) => !source || mapping.source === source)
+          .map((mapping) => {
+            const conversationMessages = messages.filter(
+              (message) => message.source === mapping.source && message.conversationId === mapping.conversationId
+            );
+            const latestMessage = conversationMessages.length > 0 ? conversationMessages[conversationMessages.length - 1] : undefined;
+
+            return {
+              id: mapping.conversationId,
+              source: mapping.source,
+              conversationId: mapping.conversationId,
+              sessionId: session.id,
+              createdAt: session.createdAt,
+              updatedAt: session.updatedAt,
+              lastActiveAt: latestMessage?.createdAt || session.lastActiveAt,
+              currentTaskId: session.currentTaskId,
+              interruptRequested: session.interruptRequested,
+              previewText: latestMessage?.content
+            };
+          })
+      )
+      .sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt));
+  }
+
+  async appendSystemConversationMessage(sessionId: string, content: string, createdAt = new Date().toISOString()): Promise<void> {
+    const session = await this.sessionManager.tryGetSession(sessionId);
+
+    if (!session) {
+      return;
+    }
+
+    await this.appendConversationMessagesForSession(session, {
+      id: randomUUID(),
+      kind: 'push',
+      title: '系统消息',
+      content,
+      meta: sessionId,
+      createdAt
+    });
   }
 
   subscribeToPushMessages(listener: PushSubscriber, sessionId?: string): () => void {
@@ -460,6 +550,19 @@ export class AgentRuntime {
   }
 
   private async pushMessage(message: PushMessage): Promise<void> {
+    const session = await this.sessionManager.tryGetSession(message.sessionId);
+
+    if (session) {
+      await this.appendConversationMessagesForSession(session, {
+        id: message.id,
+        kind: 'push',
+        title: '主动推送',
+        content: message.content,
+        meta: `${message.category} | ${message.taskId || 'no-task'}`,
+        createdAt: message.createdAt
+      });
+    }
+
     await this.storage.appendPushMessage(message);
 
     for (const subscription of this.pushSubscribers.values()) {
@@ -539,6 +642,14 @@ export class AgentRuntime {
 
       messages.push(incomingMessage);
       await this.storage.writeIncomingMessagesUnsafe(messages);
+      await this.appendConversationMessagesForRequest(session, request, {
+        id: incomingMessage.id,
+        kind: 'user',
+        title: '用户输入',
+        content: request.message,
+        meta: this.buildConversationMeta(request.externalSource, request.externalConversationId),
+        createdAt: now
+      });
       DebugLogger.info('input.persisted', {
         sessionId: session.id,
         messageId: incomingMessage.id,
@@ -611,8 +722,26 @@ export class AgentRuntime {
         return;
       }
 
+      const completedMessage = messages[messageIndex];
+
       messages.splice(messageIndex, 1);
       await this.storage.writeIncomingMessagesUnsafe(messages);
+
+      if (reply.reply) {
+        const session = await this.sessionManager.tryGetSession(reply.sessionId);
+
+        if (session) {
+          await this.appendConversationMessagesForRequest(session, completedMessage, {
+            id: randomUUID(),
+            kind: 'assistant',
+            title: '被动回复',
+            content: reply.reply,
+            meta: this.buildAssistantMeta(intent.intent, reply.queuedTask?.id),
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
       DebugLogger.info('input.completed', {
         messageId,
         sessionId: reply.sessionId,
@@ -728,5 +857,76 @@ export class AgentRuntime {
         error: message
       });
     }
+  }
+
+  private buildConversationMeta(source?: string, conversationId?: string): string {
+    const normalizedSource = source?.trim();
+    const normalizedConversationId = conversationId?.trim();
+
+    if (normalizedSource && normalizedConversationId) {
+      return `${normalizedSource} / ${normalizedConversationId}`;
+    }
+
+    return normalizedSource || normalizedConversationId || '';
+  }
+
+  private buildAssistantMeta(intent: PassiveReply['intent'], queuedTaskId?: string): string {
+    return `intent: ${intent}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`;
+  }
+
+  private async appendConversationMessagesForRequest(
+    session: AgentSession,
+    request: { externalSource?: string; externalConversationId?: string },
+    message: Omit<ConversationMessage, 'sessionId' | 'source' | 'conversationId'>
+  ): Promise<void> {
+    const source = request.externalSource?.trim();
+    const conversationId = request.externalConversationId?.trim();
+
+    if (source && conversationId) {
+      await this.appendConversationMessage({
+        ...message,
+        sessionId: session.id,
+        source,
+        conversationId
+      });
+      return;
+    }
+
+    await this.appendConversationMessagesForSession(session, message);
+  }
+
+  private async appendConversationMessagesForSession(
+    session: AgentSession,
+    message: Omit<ConversationMessage, 'sessionId' | 'source' | 'conversationId'>
+  ): Promise<void> {
+    if (session.externalMappings.length === 0) {
+      return;
+    }
+
+    for (const mapping of session.externalMappings) {
+      await this.appendConversationMessage({
+        ...message,
+        sessionId: session.id,
+        source: mapping.source,
+        conversationId: mapping.conversationId
+      });
+    }
+  }
+
+  private async appendConversationMessage(message: ConversationMessage): Promise<void> {
+    await this.storage.withConversationMessagesLock(async (messages) => {
+      if (
+        messages.some((existingMessage) =>
+          existingMessage.id === message.id
+          && existingMessage.source === message.source
+          && existingMessage.conversationId === message.conversationId
+        )
+      ) {
+        return;
+      }
+
+      messages.push(message);
+      await this.storage.writeConversationMessagesUnsafe(messages);
+    });
   }
 }
