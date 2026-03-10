@@ -15,7 +15,6 @@ import {
   SessionTask
 } from './types';
 import { DebugLogger } from './DebugLogger';
-import { ExpressionParser } from './skills/ExpressionParser';
 
 interface RunningTaskContext {
   execution: ClaudeCliExecution;
@@ -28,7 +27,6 @@ export class AgentRuntime {
   private readonly runningTasks = new Map<string, RunningTaskContext>();
   private readonly processingIncomingMessages = new Set<string>();
   private readonly pushSubscribers = new Map<string, { sessionId?: string; listener: PushSubscriber }>();
-  private readonly expressionParser: ExpressionParser;
   private backgroundDrainPromise?: Promise<void>;
 
   constructor(
@@ -38,9 +36,7 @@ export class AgentRuntime {
     private readonly intentParser: IntentParser,
     private readonly claudeCliService: ClaudeCliService,
     private readonly workspacePath: string
-  ) {
-    this.expressionParser = new ExpressionParser();
-  }
+  ) {}
 
   async acceptIncomingMessage(request: IncomingMessageRequest): Promise<AcceptedIncomingMessageReply> {
     DebugLogger.info('input.accepted_request', {
@@ -265,38 +261,11 @@ export class AgentRuntime {
           intent: intent.intent
         };
       }
-      case 'calculate': {
-        const expression = intent.expression || message;
-        const calcResult = this.expressionParser.parseAndCalculate(expression);
-
-        DebugLogger.info('calculation.performed', {
-          sessionId: session.id,
-          expression,
-          result: calcResult.result,
-          error: calcResult.error
-        });
-
-        if (calcResult.error) {
-          return {
-            sessionId: session.id,
-            claudeSessionId: session.claudeSessionId,
-            reply: `计算出错：${calcResult.error}`,
-            intent: intent.intent
-          };
-        }
-
-        return {
-          sessionId: session.id,
-          claudeSessionId: session.claudeSessionId,
-          reply: `计算结果：${expression} = ${calcResult.result}`,
-          intent: intent.intent
-        };
-      }
       case 'enqueue_task':
       default: {
         const queuedTask = await this.taskQueueService.enqueue(
           session.id,
-          intent.taskContent || message,
+          message,
           intent.taskSummary || message,
           intent.priority
         );
@@ -580,7 +549,6 @@ export class AgentRuntime {
       const reply = await this.executeIntent(session, incomingMessage.message, intent);
 
       await this.completeIncomingMessage(incomingMessage.id, intent, reply);
-      await this.pushAsyncProcessingResult(session, intent, reply);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.failIncomingMessage(incomingMessage.id, errorMessage);
@@ -642,35 +610,5 @@ export class AgentRuntime {
         error
       });
     });
-  }
-
-  private async pushAsyncProcessingResult(
-    session: AgentSession,
-    intent: IntentParseResult,
-    reply: PassiveReply
-  ): Promise<void> {
-    const content = this.buildAsyncReplyContent(intent, reply);
-
-    if (!content) {
-      return;
-    }
-
-    await this.pushMessage({
-      id: randomUUID(),
-      sessionId: session.id,
-      claudeSessionId: reply.claudeSessionId,
-      taskId: reply.queuedTask?.id,
-      category: 'system',
-      content,
-      createdAt: new Date().toISOString()
-    });
-  }
-
-  private buildAsyncReplyContent(intent: IntentParseResult, reply: PassiveReply): string | undefined {
-    if (intent.intent === 'enqueue_task' && reply.queuedTask) {
-      return `${intent.acknowledgement}`;
-    }
-
-    return reply.reply || intent.acknowledgement;
   }
 }

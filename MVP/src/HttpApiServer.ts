@@ -6,11 +6,9 @@ import { AgentRuntime } from './AgentRuntime';
 import { SessionManager } from './SessionManager';
 import { TaskQueueService } from './TaskQueueService';
 import { ImAdapterResponse, PushMessage, SessionTask } from './types';
-import { Calculator, CalculateRequest } from './skills/calculator';
 
 export class HttpApiServer {
   private readonly publicDirectoryPath: string;
-  private readonly calculator: Calculator;
 
   constructor(
     private readonly runtime: AgentRuntime,
@@ -19,7 +17,6 @@ export class HttpApiServer {
     workspacePath: string
   ) {
     this.publicDirectoryPath = join(workspacePath, 'public');
-    this.calculator = new Calculator();
   }
 
   async listen(port: number): Promise<void> {
@@ -46,37 +43,6 @@ export class HttpApiServer {
 
     if (method === 'GET' && url.pathname === '/health') {
       this.sendJson(response, 200, { ok: true });
-      return;
-    }
-
-    // Calculator API endpoints
-    if (method === 'POST' && url.pathname === '/calculator/calculate') {
-      const body = await this.readJsonBody(request);
-      const calculateRequest = this.validateCalculateRequest(body);
-      const result = this.calculator.calculate(calculateRequest);
-      this.sendJson(response, result.error ? 400 : 200, result);
-      return;
-    }
-
-    if (method === 'POST' && url.pathname === '/calculator/batch') {
-      const body = await this.readJsonBody(request);
-      if (!Array.isArray(body.requests)) {
-        this.sendJson(response, 400, { error: 'requests must be an array' });
-        return;
-      }
-      const calculateRequests = body.requests.map((req: unknown) => this.validateCalculateRequest(req));
-      const results = this.calculator.calculateBatch(calculateRequests);
-      this.sendJson(response, 200, { results });
-      return;
-    }
-
-    if (method === 'GET' && url.pathname === '/calculator/operations') {
-      const operations = this.calculator.getSupportedOperations();
-      const descriptions = operations.map(op => ({
-        operation: op,
-        description: this.calculator.getOperationDescription(op)
-      }));
-      this.sendJson(response, 200, { operations: descriptions });
       return;
     }
 
@@ -316,32 +282,4 @@ export class HttpApiServer {
     return value;
   }
 
-  private validateCalculateRequest(body: unknown): CalculateRequest {
-    if (typeof body !== 'object' || body === null) {
-      throw new Error('Request body must be an object');
-    }
-
-    const req = body as Record<string, unknown>;
-
-    const operation = req.operation;
-    if (typeof operation !== 'string' || !['add', 'subtract', 'multiply', 'divide', 'power', 'modulus'].includes(operation)) {
-      throw new Error('operation must be one of: add, subtract, multiply, divide, power, modulus');
-    }
-
-    const a = req.a;
-    if (typeof a !== 'number' || Number.isNaN(a)) {
-      throw new Error('a must be a valid number');
-    }
-
-    const b = req.b;
-    if (typeof b !== 'number' || Number.isNaN(b)) {
-      throw new Error('b must be a valid number');
-    }
-
-    return {
-      operation: operation as CalculateRequest['operation'],
-      a,
-      b
-    };
-  }
 }

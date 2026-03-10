@@ -1,8 +1,6 @@
 import { AgentSession, IntentParseResult, SessionTask } from './types';
 import { ClaudeCliService } from './ClaudeCliService';
 import { DebugLogger } from './DebugLogger';
-import { ExpressionParser } from './skills/ExpressionParser';
-import { TextTransformer } from './skills/text-transformer';
 
 const INTENT_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -28,10 +26,8 @@ const INTENT_SCHEMA: Record<string, unknown> = {
 };
 
 export class IntentParser {
-  private readonly expressionParser: ExpressionParser;
 
   constructor(private readonly claudeCliService: ClaudeCliService) {
-    this.expressionParser = new ExpressionParser();
   }
 
   async parse(message: string, session: AgentSession, tasks: SessionTask[]): Promise<IntentParseResult> {
@@ -178,31 +174,6 @@ export class IntentParser {
     const trimmedMessage = message.trim();
     const removeMatch = trimmedMessage.match(/(?:remove|delete|cancel|移除任务|删除任务)\s+([a-f0-9-]{8,})/i);
 
-    // 检查是否是计算请求
-    if (this.expressionParser.isMathExpression(trimmedMessage)) {
-      const expression = this.extractExpression(trimmedMessage);
-      return {
-        intent: 'calculate',
-        acknowledgement: '我来帮你计算这个表达式。',
-        expression: expression || trimmedMessage,
-        priority: 'normal'
-      };
-    }
-
-    // 检查是否是文本转换请求
-    if (TextTransformer.isMatch(trimmedMessage)) {
-      const transformResult = this.extractTransformRequest(trimmedMessage);
-      if (transformResult) {
-        return {
-          intent: 'transform_text',
-          acknowledgement: this.buildTransformAcknowledgement(transformResult.transformType),
-          transformType: transformResult.transformType,
-          textToTransform: transformResult.text,
-          priority: 'normal'
-        };
-      }
-    }
-
     if (/^\/clear$/i.test(trimmedMessage) || /清空会话|清除会话|重置会话/.test(trimmedMessage)) {
       return {
         intent: 'clear_session',
@@ -277,111 +248,5 @@ export class IntentParser {
   private toPreview(content: string): string {
     const normalized = content.replace(/\s+/g, ' ').trim();
     return normalized.length <= 24 ? normalized : `${normalized.slice(0, 24)}...`;
-  }
-
-  /**
-   * 从消息中提取数学表达式
-   */
-  private extractExpression(message: string): string | null {
-    // 匹配数学表达式模式
-    const patterns = [
-      /计算\s*[:：]?\s*([\d+\-*/%^().\s×÷]+)/,
-      /算\s*[:：]?\s*([\d+\-*/%^().\s×÷]+)/,
-      /([\d+\-*/%^().\s×÷]{5,})/,
-      /(?:求|等于|是)\s*([\d+\-*/%^().\s×÷]+)/
-    ];
-
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match && match[1]) {
-        return match[1].trim();
-      }
-    }
-
-    // 如果整个消息看起来像表达式，返回整个消息
-    const cleaned = message.replace(/^(计算|算|求|等于|是|帮我计算|请计算|帮我算)[：:\s]*/, '').trim();
-    if (this.expressionParser.isMathExpression(cleaned)) {
-      return cleaned;
-    }
-
-    return null;
-  }
-
-  /**
-   * 从消息中提取文本转换请求
-   */
-  private extractTransformRequest(message: string): { transformType: string; text: string } | null {
-    const transformPatterns = [
-      { type: 'uppercase', patterns: [/转大写\s*[:：]?\s*(.+)/, /uppercase\s*[:：]?\s*(.+)/i] },
-      { type: 'lowercase', patterns: [/转小写\s*[:：]?\s*(.+)/, /lowercase\s*[:：]?\s*(.+)/i] },
-      { type: 'capitalize', patterns: [/首字母大写\s*[:：]?\s*(.+)/, /capitalize\s*[:：]?\s*(.+)/i] },
-      { type: 'reverse', patterns: [/反转\s*[:：]?\s*(.+)/, /reverse\s*[:：]?\s*(.+)/i] },
-      { type: 'strip_spaces', patterns: [/去除空格\s*[:：]?\s*(.+)/, /strip.?spaces?\s*[:：]?\s*(.+)/i] },
-      { type: 'count_chars', patterns: [/统计字符\s*[:：]?\s*(.+)/, /字符数\s*[:：]?\s*(.+)/, /count\s+chars?\s*[:：]?\s*(.+)/i] },
-      { type: 'count_words', patterns: [/统计单词\s*[:：]?\s*(.+)/, /单词数\s*[:：]?\s*(.+)/, /count\s+words?\s*[:：]?\s*(.+)/i] },
-      { type: 'remove_duplicates', patterns: [/去重\s*[:：]?\s*(.+)/, /remove\s+duplicates?\s*[:：]?\s*(.+)/i] }
-    ];
-
-    for (const { type, patterns } of transformPatterns) {
-      for (const pattern of patterns) {
-        const match = message.match(pattern);
-        if (match && match[1]) {
-          return {
-            transformType: type,
-            text: match[1].trim()
-          };
-        }
-      }
-    }
-
-    // 如果只是简单的关键词，提取引号内的文本
-    const quotedTextMatch = message.match(/['""](.+?)['""]/);
-    const text = quotedTextMatch ? quotedTextMatch[1] : message.replace(/^(转大写|转小写|首字母大写|反转|去除空格|统计字符|统计单词|去重|uppercase|lowercase|capitalize|reverse|strip\s*spaces?|count\s*chars?|count\s*words?|remove\s*duplicates?)[::\s]*/, '').trim();
-
-    // 根据关键词推断转换类型
-    if (/转大写|uppercase/i.test(message)) {
-      return { transformType: 'uppercase', text };
-    }
-    if (/转小写|lowercase/i.test(message)) {
-      return { transformType: 'lowercase', text };
-    }
-    if (/首字母大写|capitalize/i.test(message)) {
-      return { transformType: 'capitalize', text };
-    }
-    if (/反转|reverse/i.test(message)) {
-      return { transformType: 'reverse', text };
-    }
-    if (/去除空格|strip\s*space/i.test(message)) {
-      return { transformType: 'strip_spaces', text };
-    }
-    if (/统计字符|字符数|count\s*char/i.test(message)) {
-      return { transformType: 'count_chars', text };
-    }
-    if (/统计单词|单词数|count\s*word/i.test(message)) {
-      return { transformType: 'count_words', text };
-    }
-    if (/去重|remove\s*duplicate/i.test(message)) {
-      return { transformType: 'remove_duplicates', text };
-    }
-
-    return null;
-  }
-
-  /**
-   * 构建文本转换的确认消息
-   */
-  private buildTransformAcknowledgement(transformType: string): string {
-    const acknowledgements: Record<string, string> = {
-      uppercase: '我来帮你把文本转换为大写。',
-      lowercase: '我来帮你把文本转换为小写。',
-      capitalize: '我来帮你把文本首字母大写。',
-      reverse: '我来帮你反转这段文本。',
-      strip_spaces: '我来帮你去除文本中的空格。',
-      count_chars: '我来帮你统计文本的字符数。',
-      count_words: '我来帮你统计文本的单词数。',
-      remove_duplicates: '我来帮你去除文本中的重复字符。'
-    };
-
-    return acknowledgements[transformType] || '我来帮你处理这个文本转换。';
   }
 }
