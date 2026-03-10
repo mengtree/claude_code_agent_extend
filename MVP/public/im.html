@@ -18,6 +18,7 @@
 
       * {
         box-sizing: border-box;
+        }
 
       body {
         margin: 0;
@@ -566,11 +567,13 @@
       }
 
       function sanitizeMessage(value, index = 0) {
+        const kind = typeof value?.kind === 'string' ? value.kind : 'assistant';
         const createdAt = normalizeDate(value?.createdAt);
+        const normalizedId = normalizeMessageId(kind, value?.id);
 
         return {
-          id: typeof value?.id === 'string' && value.id.trim().length > 0 ? value.id.trim() : `local-${Date.now()}-${index}`,
-          kind: typeof value?.kind === 'string' ? value.kind : 'assistant',
+          id: normalizedId || `local-${Date.now()}-${index}`,
+          kind,
           title: typeof value?.title === 'string' ? value.title : '消息',
           content: typeof value?.content === 'string' ? value.content : '',
           meta: typeof value?.meta === 'string' ? value.meta : '',
@@ -909,8 +912,20 @@
       function appendBubble(kind, title, content, meta, createdAt, itemId) {
         const conversation = ensureConversation();
         const normalizedCreatedAt = normalizeDate(createdAt);
-        const normalizedId = itemId || `local-${++localMessageSequence}`;
+        const normalizedId = normalizeMessageId(kind, itemId) || `local-${++localMessageSequence}`;
         const seenPushIds = new Set(conversation.seenPushIds);
+        const hasExistingMessage = conversation.messages.some((message) => {
+          const existingKind = typeof message?.kind === 'string' ? message.kind : 'assistant';
+          return existingKind === kind && normalizeMessageId(existingKind, message?.id) === normalizedId;
+        });
+
+        if (hasExistingMessage) {
+          if (kind === 'push' && !seenPushIds.has(normalizedId)) {
+            conversation.seenPushIds.push(normalizedId);
+            persistConversationState();
+          }
+          return;
+        }
 
         if (kind === 'push' && seenPushIds.has(normalizedId)) {
           return;
@@ -976,6 +991,24 @@
       function buildMetaText(meta, createdAt) {
         const timeText = formatTimestamp(createdAt);
         return meta ? `${meta} | ${timeText}` : timeText;
+      }
+
+      function normalizeMessageId(kind, value) {
+        if (typeof value !== 'string') {
+          return '';
+        }
+
+        const normalizedValue = value.trim();
+
+        if (!normalizedValue) {
+          return '';
+        }
+
+        if (kind === 'push' && normalizedValue.startsWith('push:')) {
+          return normalizedValue.slice(5);
+        }
+
+        return normalizedValue;
       }
 
       function buildConversationId() {
@@ -1283,13 +1316,21 @@
             : '';
           const intentText = typeof data.intent === 'string' ? data.intent : 'unknown';
           const queuedTaskId = typeof data.queuedTaskId === 'string' ? data.queuedTaskId : '';
+          const acceptedMessageId = typeof data.acceptedMessageId === 'string' ? data.acceptedMessageId : '';
 
           if (typeof data.sessionId === 'string' && data.sessionId.trim().length > 0) {
             conversation.sessionId = data.sessionId.trim();
             conversation.isDraft = false;
             sessionInput.value = conversation.sessionId;
           }
-          appendBubble('user', '用户输入', payload.message, `${payload.source} / ${payload.conversationId}`, sentAt);
+          appendBubble(
+            'user',
+            '用户输入',
+            payload.message,
+            `${payload.source} / ${payload.conversationId}`,
+            sentAt,
+            acceptedMessageId || undefined
+          );
           messageInput.value = '';
           if (replyText) {
             appendBubble('assistant', '被动回复', replyText, `intent: ${intentText}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`, new Date().toISOString());
@@ -1459,7 +1500,7 @@
             payload.content,
             `${payload.category} | ${payload.taskId || 'no-task'}`,
             payload.createdAt,
-            `push:${payload.id}`
+            payload.id
           );
           refreshTasks();
         });
