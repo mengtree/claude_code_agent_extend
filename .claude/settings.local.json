@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm rebuild:*)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(dotnet:*)",
+      "Bash(mkdir:*)"
+    ]
+  }
+}

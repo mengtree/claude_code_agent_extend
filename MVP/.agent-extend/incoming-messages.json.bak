@@ -1,0 +1,14 @@
+[
+  {
+    "id": "d8976a3a-2970-4288-8718-c21378205749",
+    "sessionId": "5dbc4283-dfaf-470f-a437-9a1175da43e1",
+    "claudeSessionId": "47ea34d1-5691-497b-9c4f-4ed51e1b6f8f",
+    "message": "帮我整理一份三角洲游戏攻略，并整理成文件发给我",
+    "externalSource": "browser-demo",
+    "externalConversationId": "demo-room-20260310-103531-8de5hc",
+    "status": "processing",
+    "createdAt": "2026-03-10T02:36:36.617Z",
+    "updatedAt": "2026-03-10T02:36:36.627Z",
+    "startedAt": "2026-03-10T02:36:36.627Z"
+  }
+]

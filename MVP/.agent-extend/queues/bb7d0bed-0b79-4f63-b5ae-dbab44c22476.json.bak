@@ -1,0 +1,13 @@
+[
+  {
+    "id": "85567b78-aa7e-4f67-a98f-f8d17b046661",
+    "sessionId": "bb7d0bed-0b79-4f63-b5ae-dbab44c22476",
+    "content": "用户打招呼：你好呀",
+    "summary": "用户打招呼",
+    "status": "running",
+    "priority": "normal",
+    "createdAt": "2026-03-10T02:29:24.440Z",
+    "updatedAt": "2026-03-10T02:29:24.490Z",
+    "startedAt": "2026-03-10T02:29:24.490Z"
+  }
+]

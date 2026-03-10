@@ -1,0 +1,23 @@
+{
+  "name": "claude-code-wrapper-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal TypeScript console service that wraps Claude Code for task execution.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -w -p tsconfig.json",
+    "start:http": "node dist/index.js http"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.72"
+  }
+}

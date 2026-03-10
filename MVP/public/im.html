@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentExtend IM Demo</title>
+    <style>
+      :root {
+        --bg: #f2efe8;
+        --panel: #fffdf8;
+        --ink: #1f1c16;
+        --muted: #746b5c;
+        --line: #d7cfbf;
+        --accent: #0d6b5f;
+        --accent-soft: #d9efe9;
+        --warning: #9a3f2c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background:
+          radial-gradient(circle at top left, #f6dbc8 0, rgba(246, 219, 200, 0.2) 28%, transparent 48%),
+          linear-gradient(135deg, #f2efe8, #ebe4d5 55%, #ddd3c0);
+        color: var(--ink);
+        min-height: 100vh;
+      }
+
+      .shell {
+        width: min(1200px, calc(100vw - 32px));
+        margin: 24px auto;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 18px;
+      }
+
+      .panel {
+        background: rgba(255, 253, 248, 0.92);
+        border: 1px solid rgba(127, 108, 84, 0.18);
+        border-radius: 20px;
+        box-shadow: 0 14px 40px rgba(71, 54, 34, 0.12);
+        backdrop-filter: blur(12px);
+      }
+
+      .sidebar,
+      .chat {
+        padding: 18px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .title {
+        font-size: 28px;
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .subtitle {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .section {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      input,
+      textarea,
+      button,
+      select {
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        font: inherit;
+      }
+
+      input,
+      textarea,
+      select {
+        background: rgba(255, 255, 255, 0.92);
+        padding: 12px 14px;
+        color: var(--ink);
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      button {
+        cursor: pointer;
+        padding: 12px 16px;
+        font-weight: 700;
+        background: var(--accent);
+        color: white;
+        border: none;
+        transition: transform 120ms ease, opacity 120ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button.secondary {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border: 1px solid rgba(13, 107, 95, 0.18);
+      }
+
+      button.warning {
+        background: #f4d9d3;
+        color: var(--warning);
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .status {
+        margin-top: 12px;
+        padding: 10px 12px;
+        background: #f8f4ea;
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .chat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .feed {
+        margin-top: 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .bubble {
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(127, 108, 84, 0.15);
+        line-height: 1.5;
+      }
+
+      .bubble-content {
+        display: grid;
+        gap: 8px;
+      }
+
+      .bubble-content > :first-child {
+        margin-top: 0;
+      }
+
+      .bubble-content > :last-child {
+        margin-bottom: 0;
+      }
+
+      .bubble-content p,
+      .bubble-content ul,
+      .bubble-content ol,
+      .bubble-content pre,
+      .bubble-content blockquote,
+      .bubble-content h1,
+      .bubble-content h2,
+      .bubble-content h3,
+      .bubble-content h4 {
+        margin: 0;
+      }
+
+      .bubble-content ul,
+      .bubble-content ol {
+        padding-left: 20px;
+      }
+
+      .bubble-content li + li {
+        margin-top: 4px;
+      }
+
+      .bubble-content code {
+        font-family: "Cascadia Code", "Consolas", monospace;
+        font-size: 0.92em;
+        padding: 2px 6px;
+        border-radius: 8px;
+        background: rgba(31, 28, 22, 0.08);
+      }
+
+      .bubble-content pre {
+        overflow-x: auto;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(31, 28, 22, 0.08);
+      }
+
+      .bubble-content pre code {
+        display: block;
+        padding: 0;
+        background: transparent;
+      }
+
+      .bubble-content blockquote {
+        padding-left: 12px;
+        border-left: 3px solid rgba(13, 107, 95, 0.28);
+        color: var(--muted);
+      }
+
+      .bubble-content a {
+        color: var(--accent);
+      }
+
+      .bubble.user {
+        background: #fff7ef;
+      }
+
+      .bubble.assistant {
+        background: #eef6f4;
+      }
+
+      .bubble.push {
+        background: #f3efe8;
+      }
+
+      .meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .task-list {
+        margin-top: 18px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .task-item {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(127, 108, 84, 0.16);
+      }
+
+      .task-item strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .conversation-toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      @media (max-width: 960px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar,
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="panel sidebar">
+        <h1 class="title">IM Demo</h1>
+        <p class="subtitle">用浏览器模拟一个接入外部 IM 的最小验证页。</p>
+
+        <div class="section">
+          <label for="source">Source</label>
+          <input id="source" value="browser-demo" />
+
+          <label for="conversationId">Conversation ID</label>
+          <div class="conversation-toolbar">
+            <input id="conversationId" value="demo-room-001" />
+            <button id="newConversationButton" class="secondary" type="button">新建对话</button>
+          </div>
+
+          <label for="userId">User ID</label>
+          <input id="userId" value="tester" />
+
+          <label for="sessionId">Local Session ID</label>
+          <input id="sessionId" placeholder="发送后自动填充，也可以手动输入" />
+
+          <div class="toolbar">
+            <button id="connectButton" class="secondary">连接推送</button>
+            <button id="refreshTasksButton" class="secondary">刷新任务</button>
+            <button id="clearSessionButton" class="warning">清空会话</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <label for="message">Message</label>
+          <textarea id="message">帮我给这个智能体设计一个验证清单</textarea>
+          <div class="toolbar">
+            <button id="sendButton">发送消息</button>
+            <button id="runWorkerButton" class="secondary">运行 Worker</button>
+            <button id="interruptButton" class="warning">中断任务</button>
+          </div>
+          <div class="status" id="status">尚未连接。</div>
+        </div>
+      </aside>
+
+      <main class="panel chat">
+        <div class="chat-header">
+          <div>
+            <h2>对话与推送</h2>
+            <p class="subtitle">左侧发送消息，右侧同时展示被动回复和主动推送。</p>
+          </div>
+          <span class="pill" id="streamState">SSE: disconnected</span>
+        </div>
+
+        <div class="feed" id="feed"></div>
+
+        <div class="section">
+          <h3>任务队列</h3>
+          <div class="task-list" id="taskList"></div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const sourceInput = document.getElementById('source');
+      const conversationInput = document.getElementById('conversationId');
+      const userInput = document.getElementById('userId');
+      const sessionInput = document.getElementById('sessionId');
+      const messageInput = document.getElementById('message');
+      const statusNode = document.getElementById('status');
+      const streamStateNode = document.getElementById('streamState');
+      const feedNode = document.getElementById('feed');
+      const taskListNode = document.getElementById('taskList');
+      const sendButton = document.getElementById('sendButton');
+      const connectButton = document.getElementById('connectButton');
+      const newConversationButton = document.getElementById('newConversationButton');
+      const refreshTasksButton = document.getElementById('refreshTasksButton');
+      const runWorkerButton = document.getElementById('runWorkerButton');
+      const interruptButton = document.getElementById('interruptButton');
+      const clearSessionButton = document.getElementById('clearSessionButton');
+
+      let eventSource;
+      let connectedSessionId = '';
+      let localMessageSequence = 0;
+      const seenPushIds = new Set();
+      const feedItems = [];
+
+      function appendBubble(kind, title, content, meta, createdAt, itemId) {
+        const normalizedCreatedAt = normalizeDate(createdAt);
+        const normalizedId = itemId || `local-${++localMessageSequence}`;
+
+        if (kind === 'push' && seenPushIds.has(normalizedId)) {
+          return;
+        }
+
+        if (kind === 'push') {
+          seenPushIds.add(normalizedId);
+        }
+
+        feedItems.push({
+          id: normalizedId,
+          kind,
+          title,
+          content: content ?? '',
+          meta: meta || '',
+          createdAt: normalizedCreatedAt,
+          createdAtMs: Date.parse(normalizedCreatedAt) || Date.now(),
+          sequence: localMessageSequence
+        });
+
+        renderFeed();
+      }
+
+      function renderFeed() {
+        const items = [...feedItems].sort((left, right) => {
+          if (left.createdAtMs !== right.createdAtMs) {
+            return left.createdAtMs - right.createdAtMs;
+          }
+
+          return left.sequence - right.sequence;
+        });
+
+        feedNode.innerHTML = '';
+
+        items.forEach((item) => {
+          const bubble = document.createElement('article');
+          bubble.className = `bubble ${item.kind}`;
+          bubble.innerHTML = `<strong>${escapeHtml(item.title)}</strong><div class="bubble-content">${renderMarkdown(item.content)}</div><div class="meta">${escapeHtml(buildMetaText(item.meta, item.createdAt))}</div>`;
+          feedNode.appendChild(bubble);
+        });
+      }
+
+      function buildMetaText(meta, createdAt) {
+        const timeText = formatTimestamp(createdAt);
+        return meta ? `${meta} | ${timeText}` : timeText;
+      }
+
+      function buildConversationId() {
+        const timestamp = new Date();
+        const datePart = [
+          timestamp.getFullYear(),
+          String(timestamp.getMonth() + 1).padStart(2, '0'),
+          String(timestamp.getDate()).padStart(2, '0')
+        ].join('');
+        const timePart = [
+          String(timestamp.getHours()).padStart(2, '0'),
+          String(timestamp.getMinutes()).padStart(2, '0'),
+          String(timestamp.getSeconds()).padStart(2, '0')
+        ].join('');
+        const randomPart = Math.random().toString(36).slice(2, 8);
+
+        return `demo-room-${datePart}-${timePart}-${randomPart}`;
+      }
+
+      function resetConversationState() {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = undefined;
+        }
+
+        connectedSessionId = '';
+        sessionInput.value = '';
+        localMessageSequence = 0;
+        seenPushIds.clear();
+        feedItems.length = 0;
+        renderFeed();
+        taskListNode.innerHTML = '<div class="task-item">当前没有任务。</div>';
+        streamStateNode.textContent = 'SSE: disconnected';
+      }
+
+      function createNewConversation() {
+        const nextConversationId = buildConversationId();
+        conversationInput.value = nextConversationId;
+        resetConversationState();
+        setStatus(`已创建新对话: ${nextConversationId}`);
+      }
+
+      function normalizeDate(value) {
+        if (typeof value === 'string') {
+          const timestamp = Date.parse(value);
+          if (!Number.isNaN(timestamp)) {
+            return new Date(timestamp).toISOString();
+          }
+        }
+
+        return new Date().toISOString();
+      }
+
+      function formatTimestamp(value) {
+        const timestamp = Date.parse(value);
+
+        if (Number.isNaN(timestamp)) {
+          return value;
+        }
+
+        return new Date(timestamp).toLocaleString('zh-CN', {
+          hour12: false
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;');
+      }
+
+      function renderMarkdown(value) {
+        const normalized = String(value ?? '').replace(/\r\n/g, '\n');
+
+        if (!normalized.trim()) {
+          return '<p></p>';
+        }
+
+        const codeBlocks = [];
+        let escaped = escapeHtml(normalized).replace(/```([\s\S]*?)```/g, (_, code) => {
+          const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+          codeBlocks.push(`<pre><code>${code.replace(/^\n+|\n+$/g, '')}</code></pre>`);
+          return placeholder;
+        });
+
+        escaped = escaped
+          .replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
+          .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+          .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
+          .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+          .replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/__(.+?)__/g, '<strong>$1</strong>')
+          .replace(/(^|[^*])\*(?!\s)(.+?)(?<!\s)\*(?!\*)/g, '$1<em>$2</em>')
+          .replace(/(^|[^_])_(?!\s)(.+?)(?<!\s)_(?!_)/g, '$1<em>$2</em>')
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+
+        escaped = escaped
+          .split('\n\n')
+          .map((block) => renderMarkdownBlock(block))
+          .join('');
+
+        codeBlocks.forEach((block, index) => {
+          escaped = escaped.replace(`__CODE_BLOCK_${index}__`, block);
+        });
+
+        return escaped;
+      }
+
+      function renderMarkdownBlock(block) {
+        const trimmedBlock = block.trim();
+
+        if (!trimmedBlock) {
+          return '';
+        }
+
+        if (/^__CODE_BLOCK_\d+__$/.test(trimmedBlock)) {
+          return trimmedBlock;
+        }
+
+        if (/^<h[1-4]>[\s\S]+<\/h[1-4]>$/.test(trimmedBlock) || /^<blockquote>[\s\S]+<\/blockquote>$/.test(trimmedBlock)) {
+          return trimmedBlock;
+        }
+
+        const lines = trimmedBlock.split('\n');
+
+        if (lines.every((line) => /^[-*]\s+/.test(line))) {
+          return `<ul>${lines.map((line) => `<li>${line.replace(/^[-*]\s+/, '')}</li>`).join('')}</ul>`;
+        }
+
+        if (lines.every((line) => /^\d+\.\s+/.test(line))) {
+          return `<ol>${lines.map((line) => `<li>${line.replace(/^\d+\.\s+/, '')}</li>`).join('')}</ol>`;
+        }
+
+        return `<p>${lines.join('<br />')}</p>`;
+      }
+
+      async function sendImMessage() {
+        const sentAt = new Date().toISOString();
+        const payload = {
+          source: sourceInput.value.trim(),
+          conversationId: conversationInput.value.trim(),
+          userId: userInput.value.trim(),
+          sessionId: sessionInput.value.trim() || undefined,
+          message: messageInput.value.trim()
+        };
+
+        if (!payload.message) {
+          setStatus('请输入消息内容。');
+          return;
+        }
+
+        try {
+          setStatus('正在发送消息...');
+          const data = await fetchJson('/adapters/im/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const replyText = typeof data.reply === 'string' && data.reply.trim().length > 0
+            ? data.reply
+            : '';
+          const intentText = typeof data.intent === 'string' ? data.intent : 'unknown';
+          const queuedTaskId = typeof data.queuedTaskId === 'string' ? data.queuedTaskId : '';
+
+          sessionInput.value = typeof data.sessionId === 'string' && data.sessionId.trim().length > 0
+            ? data.sessionId
+            : sessionInput.value;
+          appendBubble('user', '用户输入', payload.message, `${payload.source} / ${payload.conversationId}`, sentAt);
+          if (replyText) {
+            appendBubble('assistant', '被动回复', replyText, `intent: ${intentText}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`, new Date().toISOString());
+          }
+          setStatus(replyText
+            ? `已发送，当前 session: ${sessionInput.value}`
+            : `任务已入队，等待推送。当前 session: ${sessionInput.value}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`);
+          connectSse();
+          refreshTasks();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendBubble('assistant', '被动回复', `请求失败：${message}`, 'error', new Date().toISOString());
+          setStatus(`发送失败：${message}`);
+        }
+      }
+
+      async function refreshTasks() {
+        const source = sourceInput.value.trim();
+        const conversationId = conversationInput.value.trim();
+
+        if (!source || !conversationId) {
+          taskListNode.innerHTML = '<div class="task-item">缺少 source 或 conversationId，无法查看任务。</div>';
+          return;
+        }
+
+        const payload = await fetchJson(`/adapters/im/tasks?source=${encodeURIComponent(source)}&conversationId=${encodeURIComponent(conversationId)}`);
+        const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+
+        if (typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0) {
+          sessionInput.value = payload.sessionId;
+        }
+
+        taskListNode.innerHTML = '';
+
+        if (tasks.length === 0) {
+          taskListNode.innerHTML = '<div class="task-item">当前没有任务。</div>';
+          return;
+        }
+
+        [...tasks]
+          .sort((left, right) => {
+            const leftTime = Date.parse(left.createdAt || '') || 0;
+            const rightTime = Date.parse(right.createdAt || '') || 0;
+            return leftTime - rightTime;
+          })
+          .forEach((task) => {
+          const node = document.createElement('div');
+          node.className = 'task-item';
+          node.innerHTML = `<strong>${escapeHtml(task.summary || task.id)}</strong><div>${escapeHtml(task.status)} | ${escapeHtml(task.priority)}</div><div class="meta">${escapeHtml(task.id)} | ${escapeHtml(formatTimestamp(task.createdAt || ''))}</div>`;
+          taskListNode.appendChild(node);
+          });
+      }
+
+      async function runWorkerOnce() {
+        try {
+          setStatus('正在触发 worker...');
+          await fetchJson('/worker/run-once?pollMs=500', { method: 'POST' });
+          setStatus('worker 已处理当前积压任务。');
+          refreshTasks();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(`worker 执行失败：${message}`);
+        }
+      }
+
+      async function interruptSession() {
+        const sessionId = sessionInput.value.trim();
+
+        if (!sessionId) {
+          setStatus('没有 sessionId，无法中断。');
+          return;
+        }
+
+        try {
+          await fetchJson(`/sessions/${encodeURIComponent(sessionId)}/interrupt`, { method: 'POST' });
+          setStatus('已请求中断当前任务。');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(`中断失败：${message}`);
+        }
+      }
+
+      async function clearSession() {
+        const sessionId = sessionInput.value.trim();
+
+        if (!sessionId) {
+          setStatus('没有 sessionId，无法清空。');
+          return;
+        }
+
+        try {
+          await fetchJson(`/sessions/${encodeURIComponent(sessionId)}/clear`, { method: 'POST' });
+          appendBubble('push', '系统消息', '会话已清空。', sessionId, new Date().toISOString(), `system-clear:${sessionId}:${Date.now()}`);
+          refreshTasks();
+          setStatus('会话已清空。');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(`清空失败：${message}`);
+        }
+      }
+
+      function connectSse() {
+        const sessionId = sessionInput.value.trim();
+
+        if (!sessionId) {
+          setStatus('没有 sessionId，无法连接 SSE。');
+          return;
+        }
+
+        if (eventSource && connectedSessionId === sessionId) {
+          setStatus(`推送流已连接: ${sessionId}`);
+          return;
+        }
+
+        if (eventSource) {
+          eventSource.close();
+        }
+
+        connectedSessionId = sessionId;
+        const replay = seenPushIds.size === 0 ? 20 : 0;
+        eventSource = new EventSource(`/events?sessionId=${encodeURIComponent(sessionId)}&replay=${replay}`);
+        streamStateNode.textContent = 'SSE: connecting';
+
+        eventSource.addEventListener('push', (event) => {
+          const payload = JSON.parse(event.data);
+          appendBubble(
+            'push',
+            '主动推送',
+            payload.content,
+            `${payload.category} | ${payload.taskId || 'no-task'}`,
+            payload.createdAt,
+            `push:${payload.id}`
+          );
+          refreshTasks();
+        });
+
+        eventSource.onopen = () => {
+          streamStateNode.textContent = 'SSE: connected';
+          setStatus(`已连接推送流: ${sessionId}`);
+        };
+
+        eventSource.onerror = () => {
+          streamStateNode.textContent = 'SSE: disconnected';
+        };
+      }
+
+      function setStatus(text) {
+        statusNode.textContent = text;
+      }
+
+      async function fetchJson(url, options) {
+        const response = await fetch(url, options);
+        const text = await response.text();
+        const data = text.trim().length > 0 ? JSON.parse(text) : {};
+
+        if (!response.ok) {
+          const errorMessage = typeof data.error === 'string'
+            ? data.error
+            : `HTTP ${response.status}`;
+          throw new Error(errorMessage);
+        }
+
+        return data;
+      }
+
+      sendButton.addEventListener('click', sendImMessage);
+      connectButton.addEventListener('click', connectSse);
+      newConversationButton.addEventListener('click', createNewConversation);
+      refreshTasksButton.addEventListener('click', refreshTasks);
+      runWorkerButton.addEventListener('click', runWorkerOnce);
+      interruptButton.addEventListener('click', interruptSession);
+      clearSessionButton.addEventListener('click', clearSession);
+      refreshTasks();
+    </script>
+  </body>
+</html>

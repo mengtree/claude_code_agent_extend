@@ -1,0 +1,28 @@
+[
+  {
+    "id": "1a22d0a7-fa31-4dd9-a6fd-1d58369a7289",
+    "sessionId": "e3d9c5c8-a8db-4efe-afe9-ee53b8e85ea0",
+    "content": "Reply with IM_ADAPTER_OK only",
+    "summary": "Reply with IM_ADAPTE...",
+    "status": "completed",
+    "priority": "normal",
+    "createdAt": "2026-03-09T05:57:51.315Z",
+    "updatedAt": "2026-03-09T05:57:56.358Z",
+    "startedAt": "2026-03-09T05:57:51.813Z",
+    "result": "IM_ADAPTER_OK",
+    "completedAt": "2026-03-09T05:57:56.358Z"
+  },
+  {
+    "id": "fbdb2173-ef8e-4605-a061-5cde0c62df9f",
+    "sessionId": "e3d9c5c8-a8db-4efe-afe9-ee53b8e85ea0",
+    "content": "Reply with IM_ADAPTER_OK only",
+    "summary": "Reply with IM_ADAPTE...",
+    "status": "completed",
+    "priority": "normal",
+    "createdAt": "2026-03-09T05:58:04.880Z",
+    "updatedAt": "2026-03-09T05:58:09.009Z",
+    "startedAt": "2026-03-09T05:58:05.288Z",
+    "result": "IM_ADAPTER_OK",
+    "completedAt": "2026-03-09T05:58:09.009Z"
+  }
+]

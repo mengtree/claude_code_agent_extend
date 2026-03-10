@@ -1,0 +1,36 @@
+[
+  {
+    "id": "bb7d0bed-0b79-4f63-b5ae-dbab44c22476",
+    "workspacePath": "D:\\VSProject\\AgentExtend\\MVP",
+    "claudeProjectPath": "C:\\Users\\mengt\\.claude\\projects\\D--VSProject-AgentExtend-MVP",
+    "status": "active",
+    "createdAt": "2026-03-10T02:09:35.657Z",
+    "updatedAt": "2026-03-10T02:29:36.835Z",
+    "lastActiveAt": "2026-03-10T02:29:36.835Z",
+    "interruptRequested": false,
+    "externalMappings": [
+      {
+        "source": "browser-demo",
+        "conversationId": "demo-room-001"
+      }
+    ],
+    "claudeSessionId": "55c4e695-b7db-4221-861d-b6eb6972c35d"
+  },
+  {
+    "id": "5dbc4283-dfaf-470f-a437-9a1175da43e1",
+    "workspacePath": "D:\\VSProject\\AgentExtend\\MVP",
+    "claudeProjectPath": "C:\\Users\\mengt\\.claude\\projects\\D--VSProject-AgentExtend-MVP",
+    "status": "active",
+    "createdAt": "2026-03-10T02:35:36.305Z",
+    "updatedAt": "2026-03-10T02:39:36.218Z",
+    "lastActiveAt": "2026-03-10T02:39:36.218Z",
+    "interruptRequested": false,
+    "externalMappings": [
+      {
+        "source": "browser-demo",
+        "conversationId": "demo-room-20260310-103531-8de5hc"
+      }
+    ],
+    "claudeSessionId": "47ea34d1-5691-497b-9c4f-4ed51e1b6f8f"
+  }
+]
