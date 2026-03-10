@@ -3,6 +3,7 @@ import { ClaudeCliService, injectWorkspaceSystemPrompt } from './ClaudeCliServic
 import { AgentRuntime } from './AgentRuntime';
 import { HttpApiServer } from './HttpApiServer';
 import { IntentParser } from './IntentParser';
+import { ScheduleService } from './ScheduleService';
 import { SessionManager } from './SessionManager';
 import { Storage } from './Storage';
 import { TaskQueueService } from './TaskQueueService';
@@ -21,6 +22,7 @@ interface CommandLineOptions {
   externalSource?: string;
   externalConversationId?: string;
   taskId?: string;
+  scheduleId?: string;
   pollMs?: number;
   once?: boolean;
   limit?: number;
@@ -34,6 +36,7 @@ interface RuntimeServices {
   claudeCliService: ClaudeCliService;
   sessionManager: SessionManager;
   taskQueueService: TaskQueueService;
+  scheduleService: ScheduleService;
   intentParser: IntentParser;
   runtime: AgentRuntime;
 }
@@ -68,6 +71,9 @@ async function main(): Promise<void> {
     case 'tasks':
       await runTasksCommand(options, workspacePath);
       return;
+    case 'schedules':
+      await runSchedulesCommand(options, workspacePath);
+      return;
     case 'push':
       await runPushCommand(services.runtime, options);
       return;
@@ -89,14 +95,24 @@ function createRuntimeServices(workspacePath: string): RuntimeServices {
   const claudeCliService = new ClaudeCliService();
   const sessionManager = new SessionManager(storage, workspacePath);
   const taskQueueService = new TaskQueueService(storage);
+  const scheduleService = new ScheduleService(storage);
   const intentParser = new IntentParser(claudeCliService);
-  const runtime = new AgentRuntime(storage, sessionManager, taskQueueService, intentParser, claudeCliService, workspacePath);
+  const runtime = new AgentRuntime(
+    storage,
+    sessionManager,
+    taskQueueService,
+    scheduleService,
+    intentParser,
+    claudeCliService,
+    workspacePath
+  );
 
   return {
     storage,
     claudeCliService,
     sessionManager,
     taskQueueService,
+    scheduleService,
     intentParser,
     runtime
   };
@@ -147,7 +163,13 @@ async function runServeCommand(runtime: AgentRuntime, options: CommandLineOption
 async function runHttpCommand(services: RuntimeServices, options: CommandLineOptions): Promise<void> {
   const port = options.port ?? 3000;
   const workspacePath = normalizeWorkspacePath(options.workingDirectory ?? cwd());
-  const server = new HttpApiServer(services.runtime, services.sessionManager, services.taskQueueService, workspacePath);
+  const server = new HttpApiServer(
+    services.runtime,
+    services.sessionManager,
+    services.taskQueueService,
+    services.scheduleService,
+    workspacePath
+  );
 
   if (!options.noWorker) {
     void services.runtime.runWorkerLoop(options.pollMs ?? 2000);
@@ -223,6 +245,35 @@ async function runTasksCommand(options: CommandLineOptions, workspacePath: strin
   }
 }
 
+async function runSchedulesCommand(options: CommandLineOptions, workspacePath: string): Promise<void> {
+  const storage = new Storage(workspacePath);
+  const scheduleService = new ScheduleService(storage);
+  const subcommand = options.task || options.message || 'list';
+
+  switch (subcommand) {
+    case 'list': {
+      const schedules = await scheduleService.list(options.sessionId);
+      process.stdout.write(`${JSON.stringify(schedules, null, 2)}\n`);
+      return;
+    }
+    case 'remove': {
+      if (!options.sessionId) {
+        throw new Error('schedules remove requires --session.');
+      }
+
+      if (!options.scheduleId) {
+        throw new Error('schedules remove requires --scheduleId.');
+      }
+
+      const removed = await scheduleService.remove(options.sessionId, options.scheduleId);
+      process.stdout.write(`${JSON.stringify({ removed }, null, 2)}\n`);
+      return;
+    }
+    default:
+      throw new Error(`Unknown schedules subcommand: ${subcommand}`);
+  }
+}
+
 async function runPushCommand(runtime: AgentRuntime, options: CommandLineOptions): Promise<void> {
   const messages = await runtime.listPushMessages(options.limit ?? 20, options.sessionId);
   process.stdout.write(`${JSON.stringify(messages, null, 2)}\n`);
@@ -247,6 +298,7 @@ function parseArguments(argumentsList: string[]): CommandLineOptions {
       case 'sessions':
       case 'tasks':
       case 'push':
+      case 'schedules':
       case 'http':
       case 'help':
         options.command = current;
@@ -295,6 +347,10 @@ function parseArguments(argumentsList: string[]): CommandLineOptions {
         options.taskId = next;
         index += 1;
         break;
+      case '--scheduleId':
+        options.scheduleId = next;
+        index += 1;
+        break;
       case '--pollMs':
         options.pollMs = next ? Number.parseInt(next, 10) : undefined;
         index += 1;
@@ -321,7 +377,11 @@ function parseArguments(argumentsList: string[]): CommandLineOptions {
         options.command = 'help';
         break;
       default:
-        if (!current.startsWith('--') && !options.task && (options.command === 'sessions' || options.command === 'tasks')) {
+        if (
+          !current.startsWith('--') &&
+          !options.task &&
+          (options.command === 'sessions' || options.command === 'tasks' || options.command === 'schedules')
+        ) {
           options.task = current;
         }
         break;
@@ -342,6 +402,8 @@ function printUsage(): void {
     '  node dist/index.js sessions clear --session local-session-id',
     '  node dist/index.js tasks list --session local-session-id',
     '  node dist/index.js tasks remove --session local-session-id --taskId task-id',
+    '  node dist/index.js schedules list [--session local-session-id]',
+    '  node dist/index.js schedules remove --session local-session-id --scheduleId schedule-id',
     '  node dist/index.js push [--session local-session-id] [--limit 20]',
     '  node dist/index.js http [--port 3000] [--pollMs 2000] [--no-worker]',
     '',

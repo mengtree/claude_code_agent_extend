@@ -55,6 +55,8 @@ export interface AgentSession {
 
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type TaskPriority = 'normal' | 'urgent';
+export type ScheduleSourceType = 'one_time' | 'delay' | 'cron';
+export type ScheduleStatus = 'active' | 'paused' | 'dispatched';
 
 export interface SessionTask {
   id: string;
@@ -69,6 +71,28 @@ export interface SessionTask {
   completedAt?: string;
   result?: string;
   error?: string;
+  sourceScheduleId?: string;
+  sourceScheduleTriggerAt?: string;
+}
+
+export interface ScheduleTask {
+  id: string;
+  sessionId: string;
+  content: string;
+  summary: string;
+  sourceType: ScheduleSourceType;
+  status: ScheduleStatus;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt: string;
+  runAt?: string;
+  cronExpression?: string;
+  timezone?: string;
+  lastTriggeredAt?: string;
+  claimedAt?: string;
+  triggerToken?: string;
+  lastError?: string;
+  lastDispatchedTaskId?: string;
 }
 
 export interface IntentParseResult {

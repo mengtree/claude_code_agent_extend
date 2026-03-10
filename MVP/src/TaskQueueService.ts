@@ -3,6 +3,11 @@ import { SessionTask, TaskPriority } from './types';
 import { Storage } from './Storage';
 import { DebugLogger } from './DebugLogger';
 
+interface EnqueueTaskOptions {
+  sourceScheduleId?: string;
+  sourceScheduleTriggerAt?: string;
+}
+
 export class TaskQueueService {
   constructor(private readonly storage: Storage) {}
 
@@ -11,7 +16,13 @@ export class TaskQueueService {
     return tasks.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
-  async enqueue(sessionId: string, content: string, summary: string, priority: TaskPriority): Promise<SessionTask> {
+  async enqueue(
+    sessionId: string,
+    content: string,
+    summary: string,
+    priority: TaskPriority,
+    options?: EnqueueTaskOptions
+  ): Promise<SessionTask> {
     return this.storage.withQueueLock(sessionId, async (tasks) => {
       const now = new Date().toISOString();
       const task: SessionTask = {
@@ -22,7 +33,9 @@ export class TaskQueueService {
         status: 'queued',
         priority,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        sourceScheduleId: options?.sourceScheduleId,
+        sourceScheduleTriggerAt: options?.sourceScheduleTriggerAt
       };
 
       tasks.push(task);
@@ -32,6 +45,7 @@ export class TaskQueueService {
         taskId: task.id,
         priority: task.priority,
         summary: task.summary,
+        sourceScheduleId: task.sourceScheduleId,
         queueLength: tasks.length
       });
       return task;

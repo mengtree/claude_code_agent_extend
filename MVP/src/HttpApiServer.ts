@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { URL } from 'node:url';
 import { AgentRuntime } from './AgentRuntime';
+import { ScheduleService } from './ScheduleService';
 import { SessionManager } from './SessionManager';
 import { TaskQueueService } from './TaskQueueService';
 import { ImAdapterResponse, PushMessage, SessionTask } from './types';
@@ -14,6 +15,7 @@ export class HttpApiServer {
     private readonly runtime: AgentRuntime,
     private readonly sessionManager: SessionManager,
     private readonly taskQueueService: TaskQueueService,
+    private readonly scheduleService: ScheduleService,
     workspacePath: string
   ) {
     this.publicDirectoryPath = join(workspacePath, 'public');
@@ -155,9 +157,21 @@ export class HttpApiServer {
       return;
     }
 
+    if (method === 'GET' && pathSegments.length === 3 && pathSegments[0] === 'sessions' && pathSegments[2] === 'schedules') {
+      const schedules = await this.scheduleService.list(pathSegments[1]);
+      this.sendJson(response, 200, schedules);
+      return;
+    }
+
     if (method === 'DELETE' && pathSegments.length === 4 && pathSegments[0] === 'sessions' && pathSegments[2] === 'tasks') {
       const task = await this.taskQueueService.removeQueuedTask(pathSegments[1], pathSegments[3]);
       this.sendJson(response, 200, task ?? { deleted: false });
+      return;
+    }
+
+    if (method === 'DELETE' && pathSegments.length === 4 && pathSegments[0] === 'sessions' && pathSegments[2] === 'schedules') {
+      const removed = await this.scheduleService.remove(pathSegments[1], pathSegments[3]);
+      this.sendJson(response, 200, { deleted: removed });
       return;
     }
 

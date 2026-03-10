@@ -1,7 +1,7 @@
-import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
-import { AgentSession, IncomingMessageJob, PushMessage, SessionTask } from './types';
+import { AgentSession, IncomingMessageJob, PushMessage, ScheduleTask, SessionTask } from './types';
 import { DebugLogger } from './DebugLogger';
 
 export class Storage {
@@ -11,6 +11,8 @@ export class Storage {
   readonly incomingMessagesFilePath: string;
   readonly pushEventsFilePath: string;
   readonly locksDirectoryPath: string;
+  readonly schedulesDirectoryPath: string;
+  readonly sessionSchedulesDirectoryPath: string;
 
   constructor(workspacePath: string) {
     this.rootPath = join(workspacePath, '.agent-extend');
@@ -19,12 +21,15 @@ export class Storage {
     this.incomingMessagesFilePath = join(this.rootPath, 'incoming-messages.json');
     this.pushEventsFilePath = join(this.rootPath, 'push-events.jsonl');
     this.locksDirectoryPath = join(this.rootPath, 'locks');
+    this.schedulesDirectoryPath = join(this.rootPath, 'schedules');
+    this.sessionSchedulesDirectoryPath = join(this.schedulesDirectoryPath, 'sessions');
   }
 
   async initialize(): Promise<void> {
     await mkdir(this.rootPath, { recursive: true });
     await mkdir(this.queuesDirectoryPath, { recursive: true });
     await mkdir(this.locksDirectoryPath, { recursive: true });
+    await mkdir(this.sessionSchedulesDirectoryPath, { recursive: true });
 
     await this.ensureJsonFile(this.sessionsFilePath, []);
     await this.ensureJsonFile(this.incomingMessagesFilePath, []);
@@ -70,6 +75,52 @@ export class Storage {
     if (await this.exists(queueFilePath)) {
       await rm(queueFilePath, { force: true });
     }
+  }
+
+  async loadSchedule(sessionId: string, scheduleId: string): Promise<ScheduleTask | undefined> {
+    await this.initialize();
+    return this.readJson<ScheduleTask | undefined>(this.getScheduleFilePath(sessionId, scheduleId), undefined);
+  }
+
+  async saveSchedule(sessionId: string, schedule: ScheduleTask): Promise<void> {
+    await this.initialize();
+    await this.writeJson(this.getScheduleFilePath(sessionId, schedule.id), schedule);
+  }
+
+  async deleteSchedule(sessionId: string, scheduleId: string): Promise<void> {
+    const scheduleFilePath = this.getScheduleFilePath(sessionId, scheduleId);
+
+    if (await this.exists(scheduleFilePath)) {
+      await rm(scheduleFilePath, { force: true });
+    }
+
+    const backupFilePath = this.getBackupFilePath(scheduleFilePath);
+
+    if (await this.exists(backupFilePath)) {
+      await rm(backupFilePath, { force: true });
+    }
+  }
+
+  async deleteSchedulesForSession(sessionId: string): Promise<void> {
+    const sessionDirectoryPath = this.getSessionSchedulesDirectoryPath(sessionId);
+
+    if (await this.exists(sessionDirectoryPath)) {
+      await rm(sessionDirectoryPath, { recursive: true, force: true });
+    }
+  }
+
+  async listSchedules(sessionId?: string): Promise<ScheduleTask[]> {
+    await this.initialize();
+
+    const fileEntries = await this.listScheduleFiles(sessionId);
+    const schedules = await Promise.all(
+      fileEntries.map(async ({ sessionId: scheduleSessionId, fileName }) => {
+        const scheduleId = fileName.replace(/\.json$/i, '');
+        return this.loadSchedule(scheduleSessionId, scheduleId);
+      })
+    );
+
+    return schedules.filter((schedule): schedule is ScheduleTask => schedule !== undefined);
   }
 
   async appendPushMessage(message: PushMessage): Promise<void> {
@@ -125,6 +176,11 @@ export class Storage {
     await this.writeJson(this.incomingMessagesFilePath, messages);
   }
 
+  async withNamedLock<T>(lockName: string, operation: () => Promise<T>): Promise<T> {
+    await this.initialize();
+    return this.withExclusiveLock(lockName, operation);
+  }
+
   async loadPushMessages(limit = 20, sessionId?: string): Promise<PushMessage[]> {
     await this.initialize();
 
@@ -153,6 +209,14 @@ export class Storage {
 
   private getQueueFilePath(sessionId: string): string {
     return join(this.queuesDirectoryPath, `${sessionId}.json`);
+  }
+
+  private getSessionSchedulesDirectoryPath(sessionId: string): string {
+    return join(this.sessionSchedulesDirectoryPath, sessionId);
+  }
+
+  private getScheduleFilePath(sessionId: string, scheduleId: string): string {
+    return join(this.getSessionSchedulesDirectoryPath(sessionId), `${scheduleId}.json`);
   }
 
   private async ensureJsonFile(filePath: string, fallback: unknown): Promise<void> {
@@ -265,6 +329,43 @@ export class Storage {
     }
 
     await mkdir(filePath.slice(0, lastSeparatorIndex), { recursive: true });
+  }
+
+  private async listScheduleFiles(sessionId?: string): Promise<Array<{ sessionId: string; fileName: string }>> {
+    const sessionIds = sessionId ? [sessionId] : await this.listScheduleSessionIds();
+    const fileEntries: Array<{ sessionId: string; fileName: string }> = [];
+
+    for (const currentSessionId of sessionIds) {
+      const sessionDirectoryPath = this.getSessionSchedulesDirectoryPath(currentSessionId);
+
+      if (!(await this.exists(sessionDirectoryPath))) {
+        continue;
+      }
+
+      const entries = await readdir(sessionDirectoryPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) {
+          continue;
+        }
+
+        fileEntries.push({
+          sessionId: currentSessionId,
+          fileName: entry.name
+        });
+      }
+    }
+
+    return fileEntries;
+  }
+
+  private async listScheduleSessionIds(): Promise<string[]> {
+    if (!(await this.exists(this.sessionSchedulesDirectoryPath))) {
+      return [];
+    }
+
+    const entries = await readdir(this.sessionSchedulesDirectoryPath, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   }
 
   private async tryRestoreFromBackup(filePath: string, backupFilePath: string): Promise<boolean> {

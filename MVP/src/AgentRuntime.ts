@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ClaudeCliExecution, ClaudeCliService, injectWorkspaceSystemPrompt } from './ClaudeCliService';
 import { IntentParser } from './IntentParser';
+import { ScheduleService } from './ScheduleService';
 import { SessionManager } from './SessionManager';
 import { Storage } from './Storage';
 import { TaskQueueService } from './TaskQueueService';
@@ -12,6 +13,7 @@ import {
   IntentParseResult,
   PassiveReply,
   PushMessage,
+  ScheduleTask,
   SessionTask
 } from './types';
 import { DebugLogger } from './DebugLogger';
@@ -33,6 +35,7 @@ export class AgentRuntime {
     private readonly storage: Storage,
     private readonly sessionManager: SessionManager,
     private readonly taskQueueService: TaskQueueService,
+    private readonly scheduleService: ScheduleService,
     private readonly intentParser: IntentParser,
     private readonly claudeCliService: ClaudeCliService,
     private readonly workspacePath: string
@@ -138,6 +141,16 @@ export class AgentRuntime {
     return startedTaskCount;
   }
 
+  async processDueSchedules(): Promise<number> {
+    const claimedSchedules = await this.scheduleService.claimDueSchedules();
+
+    for (const schedule of claimedSchedules) {
+      await this.processClaimedSchedule(schedule);
+    }
+
+    return claimedSchedules.length;
+  }
+
   async handleInterrupts(): Promise<void> {
     const sessions = await this.sessionManager.listSessions();
 
@@ -158,6 +171,7 @@ export class AgentRuntime {
     for (;;) {
       await this.handleInterrupts();
       await this.processPendingIncomingMessages();
+      await this.processDueSchedules();
       await this.processPendingTasks();
       await this.sleep(pollIntervalMs);
     }
@@ -171,10 +185,12 @@ export class AgentRuntime {
 
       await this.handleInterrupts();
       const processedMessages = await this.processPendingIncomingMessages();
+      const processedSchedules = await this.processDueSchedules();
       const startedTasks = await this.processPendingTasks();
 
       if (
         processedMessages === 0 &&
+        processedSchedules === 0 &&
         startedTasks === 0 &&
         this.runningTasks.size === 0 &&
         this.processingIncomingMessages.size === 0 &&
@@ -299,7 +315,16 @@ export class AgentRuntime {
         summary: task.summary,
         phase: 'before_start'
       });
-      await this.taskQueueService.tryMarkCancelled(session.id, task.id, 'Session was removed before task start.');
+      const cancelledTask = await this.taskQueueService.tryMarkCancelled(
+        session.id,
+        task.id,
+        'Session was removed before task start.'
+      );
+
+      if (cancelledTask) {
+        await this.scheduleService.settleTriggeredTask(cancelledTask, 'cancelled', cancelledTask.error);
+      }
+
       return;
     }
 
@@ -350,6 +375,7 @@ export class AgentRuntime {
         summary: task.summary,
         resultPreview: this.toPreview(response.result)
       });
+      await this.scheduleService.settleTriggeredTask(updatedTask, 'completed');
       await this.pushMessage({
         id: randomUUID(),
         sessionId: session.id,
@@ -374,6 +400,10 @@ export class AgentRuntime {
           error: message
         });
 
+        if (cancelledTask) {
+          await this.scheduleService.settleTriggeredTask(cancelledTask, 'cancelled', message);
+        }
+
         if (cancelledTask && (await this.sessionManager.tryGetSession(session.id))) {
           await this.pushMessage({
             id: randomUUID(),
@@ -395,6 +425,10 @@ export class AgentRuntime {
           summary: task.summary,
           error: message
         });
+
+        if (failedTask) {
+          await this.scheduleService.settleTriggeredTask(failedTask, 'failed', message);
+        }
 
         if (failedTask && (await this.sessionManager.tryGetSession(session.id))) {
           await this.pushMessage({
@@ -467,9 +501,10 @@ export class AgentRuntime {
       for (;;) {
         await this.handleInterrupts();
         const processedMessages = await this.processPendingIncomingMessages();
+        const processedSchedules = await this.processDueSchedules();
         const startedTasks = await this.processPendingTasks();
 
-        if (processedMessages === 0 && startedTasks === 0) {
+        if (processedMessages === 0 && processedSchedules === 0 && startedTasks === 0) {
           return;
         }
       }
@@ -611,5 +646,68 @@ export class AgentRuntime {
         error
       });
     });
+  }
+
+  private async processClaimedSchedule(schedule: ScheduleTask): Promise<void> {
+    const session = await this.sessionManager.tryGetSession(schedule.sessionId);
+
+    if (!session) {
+      await this.scheduleService.releaseClaim(schedule, 'Session was removed before schedule trigger.');
+      return;
+    }
+
+    try {
+      const tasks = await this.taskQueueService.list(schedule.sessionId);
+      const existingQueuedTask = tasks.find(
+        (task) =>
+          task.sourceScheduleId === schedule.id &&
+          task.sourceScheduleTriggerAt === schedule.claimedAt
+      );
+      const isAlreadyEnqueued = Boolean(existingQueuedTask);
+      let dispatchedTaskId = existingQueuedTask?.id;
+
+      if (!isAlreadyEnqueued) {
+        const queuedTask = await this.taskQueueService.enqueue(
+          schedule.sessionId,
+          schedule.content,
+          schedule.summary,
+          'normal',
+          {
+            sourceScheduleId: schedule.id,
+            sourceScheduleTriggerAt: schedule.claimedAt
+          }
+        );
+        dispatchedTaskId = queuedTask.id;
+
+        DebugLogger.info('schedule.enqueued_task', {
+          sessionId: schedule.sessionId,
+          scheduleId: schedule.id,
+          taskId: queuedTask.id,
+          triggerAt: schedule.claimedAt,
+          sourceType: schedule.sourceType
+        });
+
+        await this.pushMessage({
+          id: randomUUID(),
+          sessionId: schedule.sessionId,
+          claudeSessionId: session.claudeSessionId,
+          taskId: queuedTask.id,
+          category: 'system',
+          content: `定时任务已触发并入队: ${schedule.summary}。`,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await this.scheduleService.completeTriggeredSchedule(schedule, dispatchedTaskId);
+      this.scheduleBackgroundWork();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.scheduleService.releaseClaim(schedule, message);
+      DebugLogger.error('schedule.trigger_failed', {
+        sessionId: schedule.sessionId,
+        scheduleId: schedule.id,
+        error: message
+      });
+    }
   }
 }

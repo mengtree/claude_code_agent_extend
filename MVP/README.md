@@ -30,6 +30,7 @@ npm run build
 - sessions.json：本地会话与外部会话映射。
 - incoming-messages.json：已接收但尚未完成意图分析的入站消息队列。
 - queues/*.json：每个会话独立任务队列。
+- schedules/sessions/{sessionId}/*.json：每个会话独立的定时任务文件。
 - push-events.jsonl：主动推送事件日志。
 
 这些 JSON 文件现在会采用主文件 + 备份文件写入策略；如果主文件缺失或损坏，运行时会优先尝试从 .bak 备份恢复，降低会话和队列状态丢失风险。
@@ -111,13 +112,20 @@ npm start -- tasks list --session your-local-session-id
 npm start -- tasks remove --session your-local-session-id --taskId your-task-id
 ```
 
-### 8. 查看主动推送消息
+### 8. 查看和移除定时任务
+
+```bash
+npm start -- schedules list --session your-local-session-id
+npm start -- schedules remove --session your-local-session-id --scheduleId your-schedule-id
+```
+
+### 9. 查看主动推送消息
 
 ```bash
 npm start -- push --session your-local-session-id --limit 20
 ```
 
-### 9. 启动 HTTP API
+### 10. 启动 HTTP API
 
 ```bash
 npm run start:http
@@ -234,6 +242,13 @@ GET /sessions/{sessionId}/tasks
 DELETE /sessions/{sessionId}/tasks/{taskId}
 ```
 
+### 查看和删除会话定时任务
+
+```bash
+GET /sessions/{sessionId}/schedules
+DELETE /sessions/{sessionId}/schedules/{scheduleId}
+```
+
 ### 查看主动推送日志
 
 ```bash
@@ -256,6 +271,16 @@ GET /events?sessionId=your-local-session-id&replay=20
 
 - 队列文件仍按 sessionId 独立存储，外部对话映射不会再被其他 sessionId 抢占。
 - 已成功执行完成的任务会立即从队列中移除，不再以 completed 状态继续留在任务列表里。
+
+## 当前定时任务语义
+
+- 定时任务文件位于 .agent-extend/schedules/sessions/{sessionId}/。
+- 运行时会在 worker 轮询中自动扫描到期 schedule，并把 content 注入对应 session 的普通任务队列。
+- one_time 和 delay 类型会在成功注入队列后保留为 dispatched 状态，等任务执行完成后再删除文件；如果任务失败或取消，则会保留文件并切换为 paused。
+- cron 类型在每次触发后会更新 nextRunAt 并保留文件。
+- nextRunAt 和 runAt 必须是显式带时区的 ISO 8601 时间；运行时统一转换为 UTC 后与 now.toISOString() 比较。
+- cron 使用 5 段表达式，并优先按 schedule.timezone 解释；未提供 timezone 时回退到服务运行机器的时区。
+- 目录监听不是唯一触发条件；即使监听缺失，定时扫描仍会生效。
 
 ### 手动触发一次 worker 排空
 

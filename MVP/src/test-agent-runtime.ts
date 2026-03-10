@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { AgentRuntime } from './AgentRuntime';
+import { ScheduleService } from './ScheduleService';
+import { SessionManager } from './SessionManager';
+import { Storage } from './Storage';
+import { TaskQueueService } from './TaskQueueService';
 import { AgentSession, IntentParseResult, SessionTask, TaskPriority } from './types';
 
 const mockSession: AgentSession = {
@@ -42,6 +48,11 @@ async function testEnqueueUsesOriginalMessageContent(): Promise<void> {
         return createQueuedTask(content, summary, priority);
       }
     } as never,
+    {
+      claimDueSchedules: async () => [],
+      completeTriggeredSchedule: async () => undefined,
+      releaseClaim: async () => undefined
+    } as never,
     {} as never,
     {} as never,
     process.cwd()
@@ -69,8 +80,75 @@ async function testEnqueueUsesOriginalMessageContent(): Promise<void> {
   assert.equal(reply.queuedTask?.content, originalMessage);
 }
 
+async function testDueScheduleEnqueuesQueueTask(): Promise<void> {
+  const workspacePath = join(process.cwd(), '.tmp-agent-runtime-schedule-test');
+  await removeDirectoryWithRetry(workspacePath);
+
+  try {
+    const storage = new Storage(workspacePath);
+    const sessionManager = new SessionManager(storage, workspacePath);
+    const taskQueueService = new TaskQueueService(storage);
+    const scheduleService = new ScheduleService(storage);
+    const session = await sessionManager.resolveSession({});
+
+    await storage.saveSchedule(session.id, {
+      id: 'runtime-schedule-test',
+      sessionId: session.id,
+      content: '提醒我确认定时任务已入队',
+      summary: '定时任务入队验证',
+      sourceType: 'one_time',
+      status: 'active',
+      createdAt: '2026-03-10T00:00:00.000Z',
+      updatedAt: '2026-03-10T00:00:00.000Z',
+      nextRunAt: '2026-03-10T00:00:00.000Z'
+    });
+
+    const runtime = new AgentRuntime(
+      storage,
+      sessionManager,
+      taskQueueService,
+      scheduleService,
+      {} as never,
+      {} as never,
+      workspacePath
+    );
+
+    const processedCount = await runtime.processDueSchedules();
+    const queue = await taskQueueService.list(session.id);
+    const persistedSchedule = await storage.loadSchedule(session.id, 'runtime-schedule-test');
+
+    assert.equal(processedCount, 1);
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].content, '提醒我确认定时任务已入队');
+    assert.equal(queue[0].sourceScheduleId, 'runtime-schedule-test');
+    assert.ok(persistedSchedule);
+    assert.equal(persistedSchedule?.status, 'dispatched');
+    assert.equal(persistedSchedule?.lastDispatchedTaskId, queue[0].id);
+  } finally {
+    await removeDirectoryWithRetry(workspacePath);
+  }
+}
+
+async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(directoryPath, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === 4) {
+        throw error;
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
+    }
+  }
+}
+
 async function main(): Promise<void> {
   await testEnqueueUsesOriginalMessageContent();
+  await testDueScheduleEnqueuesQueueTask();
   console.log('AgentRuntime tests passed');
 }
 

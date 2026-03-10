@@ -199,6 +199,7 @@ export class SessionManager {
     }
 
     await this.storage.deleteQueue(sessionId);
+    await this.storage.deleteSchedulesForSession(sessionId);
 
     return this.updateSession(sessionId, (currentSession) => ({
       ...currentSession,
@@ -217,6 +218,7 @@ export class SessionManager {
     }
 
     await this.storage.deleteQueue(sessionId);
+    await this.storage.deleteSchedulesForSession(sessionId);
     await this.storage.withSessionsLock(async (sessions) => {
       await this.storage.writeSessionsUnsafe(sessions.filter((item) => item.id !== sessionId));
     });
