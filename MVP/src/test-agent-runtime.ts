@@ -83,11 +83,13 @@ async function testEnqueueUsesOriginalMessageContent(): Promise<void> {
 async function testDueScheduleEnqueuesQueueTask(): Promise<void> {
   const workspacePath = join(process.cwd(), '.tmp-agent-runtime-schedule-test');
   await removeDirectoryWithRetry(workspacePath);
+  let runtime: AgentRuntime | undefined;
 
   try {
     const storage = new Storage(workspacePath);
     const sessionManager = new SessionManager(storage, workspacePath);
     const taskQueueService = new TaskQueueService(storage);
+    const runtimeTaskQueueService = createPassiveRuntimeTaskQueueService(taskQueueService);
     const scheduleService = new ScheduleService(storage);
     const session = await sessionManager.resolveSession({});
 
@@ -103,10 +105,10 @@ async function testDueScheduleEnqueuesQueueTask(): Promise<void> {
       nextRunAt: '2026-03-10T00:00:00.000Z'
     });
 
-    const runtime = new AgentRuntime(
+    runtime = new AgentRuntime(
       storage,
       sessionManager,
-      taskQueueService,
+      runtimeTaskQueueService as never,
       scheduleService,
       {} as never,
       {} as never,
@@ -125,8 +127,87 @@ async function testDueScheduleEnqueuesQueueTask(): Promise<void> {
     assert.equal(persistedSchedule?.status, 'dispatched');
     assert.equal(persistedSchedule?.lastDispatchedTaskId, queue[0].id);
   } finally {
+    await awaitBackgroundDrain(runtime);
     await removeDirectoryWithRetry(workspacePath);
   }
+}
+
+async function testCronScheduleDoesNotEnqueueRepeatedlyBeforeCompletion(): Promise<void> {
+  const workspacePath = join(process.cwd(), '.tmp-agent-runtime-cron-schedule-test');
+  await removeDirectoryWithRetry(workspacePath);
+  let runtime: AgentRuntime | undefined;
+
+  try {
+    const storage = new Storage(workspacePath);
+    const sessionManager = new SessionManager(storage, workspacePath);
+    const taskQueueService = new TaskQueueService(storage);
+    const runtimeTaskQueueService = createPassiveRuntimeTaskQueueService(taskQueueService);
+    const scheduleService = new ScheduleService(storage);
+    const session = await sessionManager.resolveSession({});
+
+    await storage.saveSchedule(session.id, {
+      id: 'runtime-cron-schedule-test',
+      sessionId: session.id,
+      content: '提醒我确认 cron 不会重复入队',
+      summary: 'cron 去重验证',
+      sourceType: 'cron',
+      status: 'active',
+      createdAt: '2026-03-10T00:00:00.000Z',
+      updatedAt: '2026-03-10T00:00:00.000Z',
+      nextRunAt: '2026-03-10T00:00:00.000Z',
+      cronExpression: '* * * * *',
+      timezone: 'UTC'
+    });
+
+    runtime = new AgentRuntime(
+      storage,
+      sessionManager,
+      runtimeTaskQueueService as never,
+      scheduleService,
+      {} as never,
+      {} as never,
+      workspacePath
+    );
+
+    const firstProcessedCount = await runtime.processDueSchedules();
+    const secondProcessedCount = await runtime.processDueSchedules();
+    const queue = await taskQueueService.list(session.id);
+    const persistedSchedule = await storage.loadSchedule(session.id, 'runtime-cron-schedule-test');
+
+    assert.equal(firstProcessedCount, 1);
+    assert.equal(secondProcessedCount, 0);
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].sourceScheduleId, 'runtime-cron-schedule-test');
+    assert.ok(persistedSchedule);
+    assert.equal(persistedSchedule?.status, 'dispatched');
+    assert.equal(persistedSchedule?.lastDispatchedTaskId, queue[0].id);
+  } finally {
+    await awaitBackgroundDrain(runtime);
+    await removeDirectoryWithRetry(workspacePath);
+  }
+}
+
+async function awaitBackgroundDrain(runtime: AgentRuntime | undefined): Promise<void> {
+  const backgroundDrainPromise = (runtime as unknown as { backgroundDrainPromise?: Promise<void> } | undefined)?.backgroundDrainPromise;
+
+  if (backgroundDrainPromise) {
+    await backgroundDrainPromise;
+  }
+}
+
+function createPassiveRuntimeTaskQueueService(taskQueueService: TaskQueueService) {
+  return {
+    list: (sessionId: string) => taskQueueService.list(sessionId),
+    enqueueScheduledTaskIfAbsent: (
+      sessionId: string,
+      content: string,
+      summary: string,
+      priority: TaskPriority,
+      scheduleId: string,
+      triggerAt: string
+    ) => taskQueueService.enqueueScheduledTaskIfAbsent(sessionId, content, summary, priority, scheduleId, triggerAt),
+    claimNextQueuedTask: async () => undefined
+  };
 }
 
 async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
@@ -149,6 +230,7 @@ async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
 async function main(): Promise<void> {
   await testEnqueueUsesOriginalMessageContent();
   await testDueScheduleEnqueuesQueueTask();
+  await testCronScheduleDoesNotEnqueueRepeatedlyBeforeCompletion();
   console.log('AgentRuntime tests passed');
 }
 

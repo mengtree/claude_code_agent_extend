@@ -1,8 +1,12 @@
-import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
 import { AgentSession, IncomingMessageJob, PushMessage, ScheduleTask, SessionTask } from './types';
 import { DebugLogger } from './DebugLogger';
+
+const LOCK_WAIT_TIMEOUT_MS = 10000;
+const LOCK_POLL_INTERVAL_MS = 50;
+const STALE_LOCK_TIMEOUT_MS = 30000;
 
 export class Storage {
   readonly rootPath: string;
@@ -239,24 +243,28 @@ export class Storage {
 
   private async withExclusiveLock<T>(lockName: string, operation: () => Promise<T>): Promise<T> {
     const lockPath = join(this.locksDirectoryPath, `${lockName}.lock`);
-    const timeoutAt = Date.now() + 10000;
+    const timeoutAt = Date.now() + LOCK_WAIT_TIMEOUT_MS;
 
     for (;;) {
       try {
         await mkdir(lockPath);
         break;
       } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
+
+        if (code === 'EEXIST' && (await this.tryRemoveStaleLock(lockName, lockPath))) {
+          continue;
+        }
+
         if (Date.now() >= timeoutAt) {
           throw new Error(`Timed out waiting for lock ${lockName}.`);
         }
-
-        const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
 
         if (code !== 'EEXIST') {
           throw error;
         }
 
-        await this.sleep(50);
+        await this.sleep(LOCK_POLL_INTERVAL_MS);
       }
     }
 
@@ -264,6 +272,33 @@ export class Storage {
       return await operation();
     } finally {
       await rm(lockPath, { recursive: true, force: true });
+    }
+  }
+
+  private async tryRemoveStaleLock(lockName: string, lockPath: string): Promise<boolean> {
+    try {
+      const lockStats = await stat(lockPath);
+      const ageMs = Date.now() - lockStats.mtimeMs;
+
+      if (ageMs < STALE_LOCK_TIMEOUT_MS) {
+        return false;
+      }
+
+      await rm(lockPath, { recursive: true, force: true });
+      DebugLogger.warn('storage.stale_lock_removed', {
+        lockName,
+        lockPath,
+        ageMs
+      });
+      return true;
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
+
+      if (code === 'ENOENT') {
+        return true;
+      }
+
+      throw error;
     }
   }
 

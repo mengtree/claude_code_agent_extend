@@ -78,8 +78,25 @@ async function testCronScheduleKeepsFileAndMovesNextRun(): Promise<void> {
     assert.equal(claimed.length, 1);
     await scheduleService.completeTriggeredSchedule(claimed[0], 'task-cron');
 
+    const dispatched = await storage.loadSchedule(schedule.sessionId, schedule.id);
+    assert.ok(dispatched);
+    assert.equal(dispatched?.status, 'dispatched');
+    assert.equal(dispatched?.lastTriggeredAt, '2026-03-10T08:01:00.000Z');
+    assert.equal(dispatched?.nextRunAt, '2026-03-10T08:01:00.000Z');
+
+    await scheduleService.settleTriggeredTask(
+      {
+        id: 'task-cron',
+        sessionId: schedule.sessionId,
+        sourceScheduleId: schedule.id,
+        sourceScheduleTriggerAt: '2026-03-10T08:01:00.000Z'
+      },
+      'completed'
+    );
+
     const reloaded = await storage.loadSchedule(schedule.sessionId, schedule.id);
     assert.ok(reloaded);
+    assert.equal(reloaded?.status, 'active');
     assert.equal(reloaded?.lastTriggeredAt, '2026-03-10T08:01:00.000Z');
     assert.equal(reloaded?.nextRunAt, '2026-03-10T08:02:00.000Z');
   } finally {

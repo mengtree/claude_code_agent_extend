@@ -656,28 +656,22 @@ export class AgentRuntime {
       return;
     }
 
-    try {
-      const tasks = await this.taskQueueService.list(schedule.sessionId);
-      const existingQueuedTask = tasks.find(
-        (task) =>
-          task.sourceScheduleId === schedule.id &&
-          task.sourceScheduleTriggerAt === schedule.claimedAt
-      );
-      const isAlreadyEnqueued = Boolean(existingQueuedTask);
-      let dispatchedTaskId = existingQueuedTask?.id;
+    if (!schedule.claimedAt || schedule.nextRunAt.localeCompare(schedule.claimedAt) > 0) {
+      await this.scheduleService.releaseClaim(schedule, 'Schedule trigger time is not due yet.');
+      return;
+    }
 
-      if (!isAlreadyEnqueued) {
-        const queuedTask = await this.taskQueueService.enqueue(
-          schedule.sessionId,
-          schedule.content,
-          schedule.summary,
-          'normal',
-          {
-            sourceScheduleId: schedule.id,
-            sourceScheduleTriggerAt: schedule.claimedAt
-          }
-        );
-        dispatchedTaskId = queuedTask.id;
+    try {
+      const { task: queuedTask, created } = await this.taskQueueService.enqueueScheduledTaskIfAbsent(
+        schedule.sessionId,
+        schedule.content,
+        schedule.summary,
+        'normal',
+        schedule.id,
+        schedule.claimedAt
+      );
+
+      if (created) {
 
         DebugLogger.info('schedule.enqueued_task', {
           sessionId: schedule.sessionId,
@@ -687,18 +681,18 @@ export class AgentRuntime {
           sourceType: schedule.sourceType
         });
 
-        await this.pushMessage({
-          id: randomUUID(),
-          sessionId: schedule.sessionId,
-          claudeSessionId: session.claudeSessionId,
-          taskId: queuedTask.id,
-          category: 'system',
-          content: `定时任务已触发并入队: ${schedule.summary}。`,
-          createdAt: new Date().toISOString()
-        });
+        // await this.pushMessage({
+        //   id: randomUUID(),
+        //   sessionId: schedule.sessionId,
+        //   claudeSessionId: session.claudeSessionId,
+        //   taskId: queuedTask.id,
+        //   category: 'system',
+        //   content: `定时任务已触发并入队: ${schedule.summary}。`,
+        //   createdAt: new Date().toISOString()
+        // });
       }
 
-      await this.scheduleService.completeTriggeredSchedule(schedule, dispatchedTaskId);
+      await this.scheduleService.completeTriggeredSchedule(schedule, queuedTask.id);
       this.scheduleBackgroundWork();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

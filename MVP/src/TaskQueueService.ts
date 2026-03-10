@@ -8,6 +8,11 @@ interface EnqueueTaskOptions {
   sourceScheduleTriggerAt?: string;
 }
 
+interface EnqueueScheduledTaskResult {
+  task: SessionTask;
+  created: boolean;
+}
+
 export class TaskQueueService {
   constructor(private readonly storage: Storage) {}
 
@@ -24,19 +29,7 @@ export class TaskQueueService {
     options?: EnqueueTaskOptions
   ): Promise<SessionTask> {
     return this.storage.withQueueLock(sessionId, async (tasks) => {
-      const now = new Date().toISOString();
-      const task: SessionTask = {
-        id: randomUUID(),
-        sessionId,
-        content,
-        summary,
-        status: 'queued',
-        priority,
-        createdAt: now,
-        updatedAt: now,
-        sourceScheduleId: options?.sourceScheduleId,
-        sourceScheduleTriggerAt: options?.sourceScheduleTriggerAt
-      };
+      const task = this.createQueuedTask(sessionId, content, summary, priority, options);
 
       tasks.push(task);
       await this.storage.writeQueueUnsafe(sessionId, this.sortTasks(tasks));
@@ -49,6 +42,60 @@ export class TaskQueueService {
         queueLength: tasks.length
       });
       return task;
+    });
+  }
+
+  async enqueueScheduledTaskIfAbsent(
+    sessionId: string,
+    content: string,
+    summary: string,
+    priority: TaskPriority,
+    scheduleId: string,
+    triggerAt: string
+  ): Promise<EnqueueScheduledTaskResult> {
+    return this.storage.withQueueLock(sessionId, async (tasks) => {
+      const existingTask = tasks.find(
+        (task) => task.sourceScheduleId === scheduleId && task.sourceScheduleTriggerAt === triggerAt
+      );
+
+      if (existingTask) {
+        DebugLogger.info('queue.enqueue_skipped_duplicate_schedule_trigger', {
+          sessionId,
+          taskId: existingTask.id,
+          priority: existingTask.priority,
+          summary: existingTask.summary,
+          sourceScheduleId: existingTask.sourceScheduleId,
+          sourceScheduleTriggerAt: existingTask.sourceScheduleTriggerAt,
+          status: existingTask.status,
+          queueLength: tasks.length
+        });
+
+        return {
+          task: existingTask,
+          created: false
+        };
+      }
+
+      const task = this.createQueuedTask(sessionId, content, summary, priority, {
+        sourceScheduleId: scheduleId,
+        sourceScheduleTriggerAt: triggerAt
+      });
+
+      tasks.push(task);
+      await this.storage.writeQueueUnsafe(sessionId, this.sortTasks(tasks));
+      DebugLogger.info('queue.enqueued', {
+        sessionId,
+        taskId: task.id,
+        priority: task.priority,
+        summary: task.summary,
+        sourceScheduleId: task.sourceScheduleId,
+        queueLength: tasks.length
+      });
+
+      return {
+        task,
+        created: true
+      };
     });
   }
 
@@ -235,6 +282,29 @@ export class TaskQueueService {
       });
       return completedTask;
     });
+  }
+
+  private createQueuedTask(
+    sessionId: string,
+    content: string,
+    summary: string,
+    priority: TaskPriority,
+    options?: EnqueueTaskOptions
+  ): SessionTask {
+    const now = new Date().toISOString();
+
+    return {
+      id: randomUUID(),
+      sessionId,
+      content,
+      summary,
+      status: 'queued',
+      priority,
+      createdAt: now,
+      updatedAt: now,
+      sourceScheduleId: options?.sourceScheduleId,
+      sourceScheduleTriggerAt: options?.sourceScheduleTriggerAt
+    };
   }
 
   private sortTasks(tasks: SessionTask[]): SessionTask[] {

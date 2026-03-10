@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DebugLogger } from './DebugLogger';
 import { Storage } from './Storage';
-import { ScheduleTask } from './types';
+import { ScheduleTask, SessionTask } from './types';
 
 const CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_CRON_SEARCH_MINUTES = 366 * 24 * 60;
@@ -106,56 +106,7 @@ export class ScheduleService {
         return;
       }
 
-      if (latest.sourceType === 'cron') {
-        const timezone = this.resolveScheduleTimezone(latest.timezone);
-        const nextRunAt = this.computeNextCronRun(
-          latest.cronExpression,
-          schedule.claimedAt || latest.nextRunAt,
-          timezone
-        );
-
-        if (!nextRunAt) {
-          const pausedSchedule: ScheduleTask = {
-            ...latest,
-            status: 'paused',
-            claimedAt: undefined,
-            triggerToken: undefined,
-            lastTriggeredAt: schedule.claimedAt,
-            lastError: 'Failed to compute next cron run time.',
-            updatedAt: new Date().toISOString()
-          };
-
-          await this.storage.saveSchedule(pausedSchedule.sessionId, pausedSchedule);
-          DebugLogger.warn('schedule.paused_invalid_cron', {
-            sessionId: pausedSchedule.sessionId,
-            scheduleId: pausedSchedule.id,
-            cronExpression: pausedSchedule.cronExpression,
-            timezone
-          });
-          return;
-        }
-
-        const updatedSchedule: ScheduleTask = {
-          ...latest,
-          nextRunAt,
-          claimedAt: undefined,
-          triggerToken: undefined,
-          lastTriggeredAt: schedule.claimedAt,
-          lastError: undefined,
-          updatedAt: new Date().toISOString()
-        };
-
-        await this.storage.saveSchedule(updatedSchedule.sessionId, updatedSchedule);
-        DebugLogger.info('schedule.rescheduled', {
-          sessionId: updatedSchedule.sessionId,
-          scheduleId: updatedSchedule.id,
-          nextRunAt: updatedSchedule.nextRunAt,
-          timezone,
-          ...this.buildScheduleTimePayload(updatedSchedule, latest, new Date().toISOString())
-        });
-        return;
-      }
-
+      const dispatchedAt = new Date().toISOString();
       const dispatchedSchedule: ScheduleTask = {
         ...latest,
         status: 'dispatched',
@@ -164,7 +115,7 @@ export class ScheduleService {
         lastTriggeredAt: schedule.claimedAt,
         lastDispatchedTaskId: dispatchedTaskId,
         lastError: undefined,
-        updatedAt: new Date().toISOString()
+        updatedAt: dispatchedAt
       };
 
       await this.storage.saveSchedule(dispatchedSchedule.sessionId, dispatchedSchedule);
@@ -173,13 +124,13 @@ export class ScheduleService {
         scheduleId: dispatchedSchedule.id,
         sourceType: dispatchedSchedule.sourceType,
         taskId: dispatchedTaskId,
-        ...this.buildScheduleTimePayload(dispatchedSchedule, latest, new Date().toISOString())
+        ...this.buildScheduleTimePayload(dispatchedSchedule, latest, dispatchedAt)
       });
     });
   }
 
   async settleTriggeredTask(
-    task: Pick<ScheduleTask, 'sessionId'> & { id: string; sourceScheduleId?: string },
+    task: Pick<SessionTask, 'sessionId' | 'sourceScheduleId' | 'sourceScheduleTriggerAt'> & { id: string },
     outcome: 'completed' | 'failed' | 'cancelled',
     error?: string
   ): Promise<void> {
@@ -196,21 +147,12 @@ export class ScheduleService {
         return;
       }
 
-      if (latest.sourceType === 'cron') {
-        if (outcome !== 'completed') {
-          const cronSchedule: ScheduleTask = {
-            ...latest,
-            lastError: error,
-            updatedAt: new Date().toISOString()
-          };
-
-          await this.storage.saveSchedule(cronSchedule.sessionId, cronSchedule);
-        }
-
+      if (latest.lastDispatchedTaskId && latest.lastDispatchedTaskId !== task.id) {
         return;
       }
 
-      if (latest.lastDispatchedTaskId && latest.lastDispatchedTaskId !== task.id) {
+      if (latest.sourceType === 'cron') {
+        await this.settleCronTriggeredTask(latest, task, outcome, error);
         return;
       }
 
@@ -230,6 +172,7 @@ export class ScheduleService {
         status: 'paused',
         claimedAt: undefined,
         triggerToken: undefined,
+        lastDispatchedTaskId: undefined,
         lastError: error,
         updatedAt: new Date().toISOString()
       };
@@ -271,6 +214,82 @@ export class ScheduleService {
         scheduleId: releasedSchedule.id,
         error
       });
+    });
+  }
+
+  private async settleCronTriggeredTask(
+    schedule: ScheduleTask,
+    task: Pick<SessionTask, 'sourceScheduleTriggerAt'> & { id: string },
+    outcome: 'completed' | 'failed' | 'cancelled',
+    error?: string
+  ): Promise<void> {
+    if (outcome !== 'completed') {
+      const pausedSchedule: ScheduleTask = {
+        ...schedule,
+        status: 'paused',
+        claimedAt: undefined,
+        triggerToken: undefined,
+        lastDispatchedTaskId: undefined,
+        lastError: error,
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.storage.saveSchedule(pausedSchedule.sessionId, pausedSchedule);
+      DebugLogger.warn('schedule.paused_after_task_end', {
+        sessionId: pausedSchedule.sessionId,
+        scheduleId: pausedSchedule.id,
+        taskId: task.id,
+        outcome,
+        error
+      });
+      return;
+    }
+
+    const timezone = this.resolveScheduleTimezone(schedule.timezone);
+    const baseTime = schedule.lastTriggeredAt || task.sourceScheduleTriggerAt || schedule.nextRunAt;
+    const nextRunAt = this.computeNextCronRun(schedule.cronExpression, baseTime, timezone);
+
+    if (!nextRunAt) {
+      const pausedSchedule: ScheduleTask = {
+        ...schedule,
+        status: 'paused',
+        claimedAt: undefined,
+        triggerToken: undefined,
+        lastDispatchedTaskId: undefined,
+        lastError: 'Failed to compute next cron run time.',
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.storage.saveSchedule(pausedSchedule.sessionId, pausedSchedule);
+      DebugLogger.warn('schedule.paused_invalid_cron', {
+        sessionId: pausedSchedule.sessionId,
+        scheduleId: pausedSchedule.id,
+        cronExpression: pausedSchedule.cronExpression,
+        timezone,
+        baseTime
+      });
+      return;
+    }
+
+    const completedAt = new Date().toISOString();
+    const updatedSchedule: ScheduleTask = {
+      ...schedule,
+      status: 'active',
+      nextRunAt,
+      claimedAt: undefined,
+      triggerToken: undefined,
+      lastDispatchedTaskId: undefined,
+      lastError: undefined,
+      updatedAt: completedAt
+    };
+
+    await this.storage.saveSchedule(updatedSchedule.sessionId, updatedSchedule);
+    DebugLogger.info('schedule.rescheduled', {
+      sessionId: updatedSchedule.sessionId,
+      scheduleId: updatedSchedule.id,
+      nextRunAt: updatedSchedule.nextRunAt,
+      timezone,
+      ...this.buildScheduleTimePayload(updatedSchedule, schedule, completedAt)
     });
   }
 
