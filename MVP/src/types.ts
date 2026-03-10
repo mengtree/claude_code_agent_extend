@@ -57,6 +57,7 @@ export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancel
 export type TaskPriority = 'normal' | 'urgent';
 export type ScheduleSourceType = 'one_time' | 'delay' | 'cron';
 export type ScheduleStatus = 'active' | 'paused' | 'dispatched';
+export type ScheduleDeliveryMode = 'queue' | 'push';
 
 export interface SessionTask {
   id: string;
@@ -81,6 +82,7 @@ export interface ScheduleTask {
   content: string;
   summary: string;
   sourceType: ScheduleSourceType;
+  deliveryMode?: ScheduleDeliveryMode;
   status: ScheduleStatus;
   createdAt: string;
   updatedAt: string;
@@ -93,6 +95,7 @@ export interface ScheduleTask {
   triggerToken?: string;
   lastError?: string;
   lastDispatchedTaskId?: string;
+  lastPushMessageId?: string;
 }
 
 export interface IntentParseResult {

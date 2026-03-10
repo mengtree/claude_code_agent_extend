@@ -662,6 +662,31 @@ export class AgentRuntime {
     }
 
     try {
+      if (schedule.deliveryMode === 'push') {
+        const pushMessageId = randomUUID();
+
+        await this.pushMessage({
+          id: pushMessageId,
+          sessionId: schedule.sessionId,
+          claudeSessionId: session.claudeSessionId,
+          category: 'system',
+          content: schedule.content,
+          createdAt: new Date().toISOString()
+        });
+
+        DebugLogger.info('schedule.pushed_message', {
+          sessionId: schedule.sessionId,
+          scheduleId: schedule.id,
+          pushMessageId,
+          triggerAt: schedule.claimedAt,
+          sourceType: schedule.sourceType
+        });
+
+        await this.scheduleService.completeTriggeredPush(schedule, pushMessageId);
+        this.scheduleBackgroundWork();
+        return;
+      }
+
       const { task: queuedTask, created } = await this.taskQueueService.enqueueScheduledTaskIfAbsent(
         schedule.sessionId,
         schedule.content,

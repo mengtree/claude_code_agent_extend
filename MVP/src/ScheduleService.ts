@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DebugLogger } from './DebugLogger';
 import { Storage } from './Storage';
-import { ScheduleTask, SessionTask } from './types';
+import { ScheduleDeliveryMode, ScheduleTask, SessionTask } from './types';
 
 const CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_CRON_SEARCH_MINUTES = 366 * 24 * 60;
@@ -114,6 +114,7 @@ export class ScheduleService {
         triggerToken: undefined,
         lastTriggeredAt: schedule.claimedAt,
         lastDispatchedTaskId: dispatchedTaskId,
+        lastPushMessageId: undefined,
         lastError: undefined,
         updatedAt: dispatchedAt
       };
@@ -125,6 +126,83 @@ export class ScheduleService {
         sourceType: dispatchedSchedule.sourceType,
         taskId: dispatchedTaskId,
         ...this.buildScheduleTimePayload(dispatchedSchedule, latest, dispatchedAt)
+      });
+    });
+  }
+
+  async completeTriggeredPush(schedule: ScheduleTask, pushMessageId: string): Promise<void> {
+    await this.storage.withNamedLock(this.getScheduleLockName(schedule.sessionId, schedule.id), async () => {
+      const latest = await this.storage.loadSchedule(schedule.sessionId, schedule.id);
+
+      if (!latest) {
+        return;
+      }
+
+      if (latest.claimedAt !== schedule.claimedAt) {
+        return;
+      }
+
+      const deliveredAt = new Date().toISOString();
+
+      if (latest.sourceType === 'cron') {
+        const timezone = this.resolveScheduleTimezone(latest.timezone);
+        const baseTime = schedule.claimedAt || latest.lastTriggeredAt || latest.nextRunAt;
+        const nextRunAt = this.computeNextCronRun(latest.cronExpression, baseTime, timezone);
+
+        if (!nextRunAt) {
+          const pausedSchedule: ScheduleTask = {
+            ...latest,
+            status: 'paused',
+            claimedAt: undefined,
+            triggerToken: undefined,
+            lastDispatchedTaskId: undefined,
+            lastPushMessageId: undefined,
+            lastError: 'Failed to compute next cron run time after push delivery.',
+            updatedAt: deliveredAt
+          };
+
+          await this.storage.saveSchedule(pausedSchedule.sessionId, pausedSchedule);
+          DebugLogger.warn('schedule.push_paused_invalid_cron', {
+            sessionId: pausedSchedule.sessionId,
+            scheduleId: pausedSchedule.id,
+            cronExpression: pausedSchedule.cronExpression,
+            timezone,
+            baseTime
+          });
+          return;
+        }
+
+        const updatedSchedule: ScheduleTask = {
+          ...latest,
+          status: 'active',
+          nextRunAt,
+          claimedAt: undefined,
+          triggerToken: undefined,
+          lastTriggeredAt: schedule.claimedAt,
+          lastDispatchedTaskId: undefined,
+          lastPushMessageId: pushMessageId,
+          lastError: undefined,
+          updatedAt: deliveredAt
+        };
+
+        await this.storage.saveSchedule(updatedSchedule.sessionId, updatedSchedule);
+        DebugLogger.info('schedule.push_rescheduled', {
+          sessionId: updatedSchedule.sessionId,
+          scheduleId: updatedSchedule.id,
+          nextRunAt: updatedSchedule.nextRunAt,
+          pushMessageId,
+          timezone,
+          ...this.buildScheduleTimePayload(updatedSchedule, latest, deliveredAt)
+        });
+        return;
+      }
+
+      await this.storage.deleteSchedule(latest.sessionId, latest.id);
+      DebugLogger.info('schedule.push_completed_deleted', {
+        sessionId: latest.sessionId,
+        scheduleId: latest.id,
+        sourceType: latest.sourceType,
+        pushMessageId
       });
     });
   }
@@ -173,6 +251,7 @@ export class ScheduleService {
         claimedAt: undefined,
         triggerToken: undefined,
         lastDispatchedTaskId: undefined,
+        lastPushMessageId: undefined,
         lastError: error,
         updatedAt: new Date().toISOString()
       };
@@ -230,6 +309,7 @@ export class ScheduleService {
         claimedAt: undefined,
         triggerToken: undefined,
         lastDispatchedTaskId: undefined,
+        lastPushMessageId: undefined,
         lastError: error,
         updatedAt: new Date().toISOString()
       };
@@ -256,6 +336,7 @@ export class ScheduleService {
         claimedAt: undefined,
         triggerToken: undefined,
         lastDispatchedTaskId: undefined,
+        lastPushMessageId: undefined,
         lastError: 'Failed to compute next cron run time.',
         updatedAt: new Date().toISOString()
       };
@@ -279,6 +360,7 @@ export class ScheduleService {
       claimedAt: undefined,
       triggerToken: undefined,
       lastDispatchedTaskId: undefined,
+      lastPushMessageId: undefined,
       lastError: undefined,
       updatedAt: completedAt
     };
@@ -321,6 +403,7 @@ export class ScheduleService {
       updatedAt: this.normalizeIsoString(schedule.updatedAt) || now,
       nextRunAt: this.normalizeExplicitIsoString(schedule.nextRunAt) || '',
       timezone: this.resolveScheduleTimezone(schedule.timezone),
+      deliveryMode: this.normalizeDeliveryMode(schedule.deliveryMode),
       lastTriggeredAt: this.normalizeIsoString(schedule.lastTriggeredAt),
       claimedAt: this.normalizeIsoString(schedule.claimedAt),
       triggerToken: this.isNonEmptyString(schedule.triggerToken) ? schedule.triggerToken : undefined,
@@ -328,7 +411,8 @@ export class ScheduleService {
       runAt: this.normalizeExplicitIsoString(schedule.runAt),
       lastDispatchedTaskId: this.isNonEmptyString(schedule.lastDispatchedTaskId)
         ? schedule.lastDispatchedTaskId
-        : undefined
+        : undefined,
+      lastPushMessageId: this.isNonEmptyString(schedule.lastPushMessageId) ? schedule.lastPushMessageId : undefined
     };
 
     if (normalized.sourceType === 'cron') {
@@ -546,6 +630,10 @@ export class ScheduleService {
     }
 
     return 'active';
+  }
+
+  private normalizeDeliveryMode(value: ScheduleDeliveryMode | undefined): ScheduleDeliveryMode {
+    return value === 'push' ? 'push' : 'queue';
   }
 
   private buildScheduleTimePayload(

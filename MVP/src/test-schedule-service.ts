@@ -147,6 +147,45 @@ async function testOneTimeSchedulePausesAfterTaskFailure(): Promise<void> {
   }
 }
 
+async function testCronPushScheduleReschedulesImmediately(): Promise<void> {
+  const workspacePath = join(process.cwd(), '.tmp-schedule-service-cron-push');
+  await rm(workspacePath, { recursive: true, force: true });
+
+  try {
+    const storage = new Storage(workspacePath);
+    const scheduleService = new ScheduleService(storage);
+    const schedule: ScheduleTask = {
+      id: 'schedule-cron-push',
+      sessionId: 'session-push',
+      content: '提醒我查看巡检结果',
+      summary: '巡检提醒',
+      sourceType: 'cron',
+      deliveryMode: 'push',
+      status: 'active',
+      createdAt: '2026-03-10T08:00:00.000Z',
+      updatedAt: '2026-03-10T08:00:00.000Z',
+      nextRunAt: '2026-03-10T08:01:00.000Z',
+      cronExpression: '2 8 * * *',
+      timezone: 'UTC'
+    };
+
+    await storage.saveSchedule(schedule.sessionId, schedule);
+    const claimed = await scheduleService.claimDueSchedules(new Date('2026-03-10T08:01:00.000Z'));
+
+    assert.equal(claimed.length, 1);
+    await scheduleService.completeTriggeredPush(claimed[0], 'push-message-1');
+
+    const reloaded = await storage.loadSchedule(schedule.sessionId, schedule.id);
+    assert.ok(reloaded);
+    assert.equal(reloaded?.status, 'active');
+    assert.equal(reloaded?.lastTriggeredAt, '2026-03-10T08:01:00.000Z');
+    assert.equal(reloaded?.lastPushMessageId, 'push-message-1');
+    assert.equal(reloaded?.nextRunAt, '2026-03-10T08:02:00.000Z');
+  } finally {
+    await rm(workspacePath, { recursive: true, force: true });
+  }
+}
+
 async function testRejectsAmbiguousAbsoluteTimeWithoutTimezone(): Promise<void> {
   const workspacePath = join(process.cwd(), '.tmp-schedule-service-ambiguous-time');
   await rm(workspacePath, { recursive: true, force: true });
@@ -182,6 +221,7 @@ async function main(): Promise<void> {
   await testCronScheduleKeepsFileAndMovesNextRun();
   await testRejectsAmbiguousAbsoluteTimeWithoutTimezone();
   await testOneTimeSchedulePausesAfterTaskFailure();
+  await testCronPushScheduleReschedulesImmediately();
   console.log('ScheduleService tests passed');
 }
 

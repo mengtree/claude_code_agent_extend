@@ -33,6 +33,8 @@ npm run build
 - schedules/sessions/{sessionId}/*.json：每个会话独立的定时任务文件。
 - push-events.jsonl：主动推送事件日志。
 
+Schedule 文件支持 deliveryMode 字段：默认 queue，表示到期后进入任务队列；如果设为 push，则到期后直接写入主动推送消息，不再创建队列任务。
+
 这些 JSON 文件现在会采用主文件 + 备份文件写入策略；如果主文件缺失或损坏，运行时会优先尝试从 .bak 备份恢复，降低会话和队列状态丢失风险。
 
 Claude Code SDK 默认仍会把可持久化会话保存在用户目录 .claude/projects 下；删除本地 session 时，本原型会同步删除对应的 Claude 会话文件，避免长期积累。对 noSessionPersistence 场景，运行时会通过 SDK 设置 persistSession: false。
