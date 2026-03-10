@@ -32,5 +32,22 @@
       }
     ],
     "claudeSessionId": "47ea34d1-5691-497b-9c4f-4ed51e1b6f8f"
+  },
+  {
+    "id": "821015d2-3b05-4527-84fa-6023e125f851",
+    "workspacePath": "D:\\VSProject\\AgentExtend\\MVP",
+    "claudeProjectPath": "C:\\Users\\mengt\\.claude\\projects\\D--VSProject-AgentExtend-MVP",
+    "status": "active",
+    "createdAt": "2026-03-10T02:54:32.763Z",
+    "updatedAt": "2026-03-10T03:01:03.907Z",
+    "lastActiveAt": "2026-03-10T03:01:03.907Z",
+    "interruptRequested": false,
+    "externalMappings": [
+      {
+        "source": "browser-demo",
+        "conversationId": "demo-room-20260310-105425-bxb1cb"
+      }
+    ],
+    "claudeSessionId": "27935f40-0190-4c03-83e8-16c02c0aa708"
   }
 ]

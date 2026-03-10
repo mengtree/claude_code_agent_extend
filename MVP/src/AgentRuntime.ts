@@ -580,6 +580,7 @@ export class AgentRuntime {
       const reply = await this.executeIntent(session, incomingMessage.message, intent);
 
       await this.completeIncomingMessage(incomingMessage.id, intent, reply);
+      await this.pushAsyncProcessingResult(session, intent, reply);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.failIncomingMessage(incomingMessage.id, errorMessage);
@@ -643,4 +644,33 @@ export class AgentRuntime {
     });
   }
 
+  private async pushAsyncProcessingResult(
+    session: AgentSession,
+    intent: IntentParseResult,
+    reply: PassiveReply
+  ): Promise<void> {
+    const content = this.buildAsyncReplyContent(intent, reply);
+
+    if (!content) {
+      return;
+    }
+
+    await this.pushMessage({
+      id: randomUUID(),
+      sessionId: session.id,
+      claudeSessionId: reply.claudeSessionId,
+      taskId: reply.queuedTask?.id,
+      category: 'system',
+      content,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  private buildAsyncReplyContent(intent: IntentParseResult, reply: PassiveReply): string | undefined {
+    if (intent.intent === 'enqueue_task' && reply.queuedTask) {
+      return `${intent.acknowledgement}`;
+    }
+
+    return reply.reply || intent.acknowledgement;
+  }
 }

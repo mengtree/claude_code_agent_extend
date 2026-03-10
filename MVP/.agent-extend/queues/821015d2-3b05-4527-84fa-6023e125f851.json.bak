@@ -1,0 +1,13 @@
+[
+  {
+    "id": "cdcd47d0-6b4f-4a55-a785-8286b514a430",
+    "sessionId": "821015d2-3b05-4527-84fa-6023e125f851",
+    "content": "把文件链接发给我",
+    "summary": "发送文件链接给用户",
+    "status": "running",
+    "priority": "normal",
+    "createdAt": "2026-03-10T03:00:52.534Z",
+    "updatedAt": "2026-03-10T03:00:52.577Z",
+    "startedAt": "2026-03-10T03:00:52.577Z"
+  }
+]
