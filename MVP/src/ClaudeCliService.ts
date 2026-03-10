@@ -13,20 +13,31 @@ const dynamicImport = new Function(
 
 export function injectWorkspaceSystemPrompt(
   systemPrompt: string | undefined,
-  workingDirectory: string
+  workingDirectory: string,
+  sessionId?: string
 ): string | undefined {
   const skillsDirectory = join(workingDirectory, 'skills');
 
-  if (!existsSync(skillsDirectory)) {
-    return systemPrompt;
+  const parts: string[] = [];
+
+  // 添加工作目录信息
+  parts.push(`当前智能体服务工作目录: ${workingDirectory}`);
+
+  // 添加 sessionId（如果提供）
+  if (sessionId) {
+    parts.push(`当前会话 ID（sessionId）: ${sessionId}`);
   }
 
-  const workspacePrompt = [
-    `当前智能体服务工作目录: ${workingDirectory}`,
-    `该目录下存在项目级技能目录: ${skillsDirectory}`,
-    '如果任务与项目技能相关，请优先查看 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
-    '不要假设 skills 不存在；需要时主动检查并使用其中的说明。'
-  ].join('\n');
+  // 添加 skills 目录信息（如果存在）
+  if (existsSync(skillsDirectory)) {
+    parts.push(
+      `该目录下存在项目级技能目录: ${skillsDirectory}`,
+      '如果任务与项目技能相关，请优先查看 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
+      '不要假设 skills 不存在；需要时主动检查并使用其中的说明。'
+    );
+  }
+
+  const workspacePrompt = parts.join('\n');
 
   return systemPrompt
     ? `${workspacePrompt}\n\n${systemPrompt}`

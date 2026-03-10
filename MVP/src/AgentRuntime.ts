@@ -340,7 +340,7 @@ export class AgentRuntime {
 
     const execution = this.claudeCliService.startExecution({
       task: task.content,
-      systemPrompt: injectWorkspaceSystemPrompt(undefined, this.workspacePath),
+      systemPrompt: injectWorkspaceSystemPrompt(undefined, this.workspacePath, session.id),
       workingDirectory: this.workspacePath,
       resumeSessionId: session.claudeSessionId,
       timeoutMs: 10 * 60 * 1000
