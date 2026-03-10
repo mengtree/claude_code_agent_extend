@@ -1,5 +1,5 @@
 import { cwd } from 'node:process';
-import { ClaudeCliService } from './ClaudeCliService';
+import { ClaudeCliService, injectWorkspaceSystemPrompt } from './ClaudeCliService';
 import { AgentRuntime } from './AgentRuntime';
 import { HttpApiServer } from './HttpApiServer';
 import { IntentParser } from './IntentParser';
@@ -106,7 +106,7 @@ async function runLegacyTaskMode(options: CommandLineOptions, workspacePath: str
   const service = new ClaudeCliService();
   const response = await service.execute({
     task: options.task!,
-    systemPrompt: options.systemPrompt,
+    systemPrompt: injectWorkspaceSystemPrompt(options.systemPrompt, workspacePath),
     model: options.model,
     resumeSessionId: options.resumeSessionId,
     workingDirectory: workspacePath,

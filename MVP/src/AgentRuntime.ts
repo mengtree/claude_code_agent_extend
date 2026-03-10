@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ClaudeCliExecution, ClaudeCliService } from './ClaudeCliService';
+import { ClaudeCliExecution, ClaudeCliService, injectWorkspaceSystemPrompt } from './ClaudeCliService';
 import { IntentParser } from './IntentParser';
 import { SessionManager } from './SessionManager';
 import { Storage } from './Storage';
@@ -315,6 +315,7 @@ export class AgentRuntime {
 
     const execution = this.claudeCliService.startExecution({
       task: task.content,
+      systemPrompt: injectWorkspaceSystemPrompt(undefined, this.workspacePath),
       workingDirectory: this.workspacePath,
       resumeSessionId: session.claudeSessionId,
       timeoutMs: 10 * 60 * 1000

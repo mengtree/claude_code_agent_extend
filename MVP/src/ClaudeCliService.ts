@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { cwd as getCurrentWorkingDirectory } from 'node:process';
 import type { Options as ClaudeSdkOptions, Query as ClaudeSdkQuery, SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeCliRawResult, ClaudeCliRequest, ClaudeCliResponse } from './types';
@@ -8,6 +10,28 @@ const dynamicImport = new Function(
   'specifier',
   'return import(specifier);'
 ) as (specifier: string) => Promise<ClaudeSdkModule>;
+
+export function injectWorkspaceSystemPrompt(
+  systemPrompt: string | undefined,
+  workingDirectory: string
+): string | undefined {
+  const skillsDirectory = join(workingDirectory, 'skills');
+
+  if (!existsSync(skillsDirectory)) {
+    return systemPrompt;
+  }
+
+  const workspacePrompt = [
+    `当前智能体服务工作目录: ${workingDirectory}`,
+    `该目录下存在项目级技能目录: ${skillsDirectory}`,
+    '如果任务与项目技能相关，请优先查看 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
+    '不要假设 skills 不存在；需要时主动检查并使用其中的说明。'
+  ].join('\n');
+
+  return systemPrompt
+    ? `${workspacePrompt}\n\n${systemPrompt}`
+    : workspacePrompt;
+}
 
 export interface ClaudeCliExecution {
   completion: Promise<ClaudeCliResponse>;
