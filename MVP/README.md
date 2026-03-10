@@ -155,6 +155,197 @@ http://127.0.0.1:3000/im
 - 通过 SSE 订阅当前会话的主动推送。
 - 查看当前会话任务，并触发 worker、中断或清空会话。
 
+## 以 HTTP 方式接入 IM
+
+这一节面向企业 IM 网关、Webhook 适配器或你自己的中间层服务。推荐把本项目作为“智能体执行后端”，由你的 IM 接入层负责签名校验、用户鉴权、消息去重和平台回包。
+
+### 整体链路
+
+1. IM 平台把用户消息回调到你的网关服务。
+2. 网关服务调用 `POST /adapters/im/messages` 把消息转发给本运行时。
+3. 运行时立即返回 `202 Accepted`，表示消息已落盘并进入异步处理流程。
+4. 网关服务通过 `GET /events` 订阅主动推送，或通过 `GET /push` 拉取结果。
+5. 网关服务把后续结果转发回 IM 平台。
+
+如果你的 IM 平台要求 Webhook 在几秒内响应，这种“先接收、后异步推送结果”的方式更稳妥，因为任务执行、调度和多轮 Claude 会话复用都发生在后台。
+
+### 先启动服务
+
+```bash
+npm run start:http
+```
+
+如需自定义端口：
+
+```bash
+npm start -- http --port 3100
+```
+
+默认会同时启动内置 worker。对于 HTTP 接入 IM，这通常就是你想要的模式，因为消息进入后会自动被后台处理。
+
+### 核心入口：发送 IM 消息
+
+```bash
+POST /adapters/im/messages
+Content-Type: application/json
+
+{
+	"source": "wecom",
+	"conversationId": "group-001",
+	"userId": "zhangsan",
+	"message": "帮我整理今天的待办并提醒我晚上 8 点回顾",
+	"sessionId": "optional-local-session-id"
+}
+```
+
+字段说明：
+
+- `source`：外部 IM 来源标识，建议固定使用平台名，如 `wecom`、`dingtalk`、`feishu`。
+- `conversationId`：外部会话 ID。单聊可用用户会话 ID，群聊可用群 ID。
+- `userId`：可选，用于让你的网关在回推结果时定位具体用户。
+- `message`：用户原始消息。
+- `sessionId`：可选。如果你已经在业务侧保存了本地 sessionId，可直接带回；否则运行时会根据 `source + conversationId` 自动解析或创建本地会话。
+
+成功响应示例：
+
+```json
+{
+	"source": "wecom",
+	"conversationId": "group-001",
+	"userId": "zhangsan",
+	"sessionId": "0f7c1d45-4e1c-47f2-b1c7-5a2f2f9f8d2d",
+	"intent": "processing",
+	"status": "accepted",
+	"acceptedMessageId": "a4dbd6f7-c2a8-4cda-9a28-43d6c63b6b11"
+}
+```
+
+这里有几个容易误解的点：
+
+- `202` 只表示“已接收并入站落盘”，不表示任务已经执行完成。
+- `intent=processing` 表示真实意图解析和后续动作将在后台继续处理。
+- `reply` 字段可能为空，这在普通入队场景是正常行为，不应视为异常。
+- `sessionId` 必须在你的网关侧缓存起来，后续订阅 SSE、查任务、清空会话都要用到它。
+
+### 会话绑定规则
+
+运行时会把 `source + conversationId` 绑定到一个本地 `sessionId` 上，用于复用上下文和底层 Claude 会话。
+
+推荐做法：
+
+- 同一个 IM 群聊始终传同一个 `conversationId`。
+- 单聊场景不要混用不同格式的会话 ID。
+- 你的网关拿到第一次响应里的 `sessionId` 后，可以同步保存，后续优先显式传回。
+
+当前实现会保证同一个外部会话映射只归属一个本地 session，避免主动推送漂移到旧会话。
+
+### 接收后续结果：SSE 推送
+
+最推荐的方式是由你的网关维持一个 SSE 长连接：
+
+```bash
+GET /events?sessionId=0f7c1d45-4e1c-47f2-b1c7-5a2f2f9f8d2d&replay=20
+Accept: text/event-stream
+```
+
+说明：
+
+- `sessionId` 可选；传入后只接收该会话的推送。
+- `replay` 表示连接建立时先回放最近多少条历史 push。
+- 事件名固定是 `push`。
+
+SSE 数据示例：
+
+```text
+event: push
+data: {"id":"msg-001","sessionId":"0f7c1d45-4e1c-47f2-b1c7-5a2f2f9f8d2d","taskId":"task-123","category":"task_completed","content":"调研提纲已整理完成...","createdAt":"2026-03-10T08:00:00.000Z"}
+```
+
+字段说明：
+
+- `id`：push 事件唯一 ID，接入侧应按这个字段去重。
+- `sessionId`：所属本地会话。
+- `taskId`：可选，表示该推送关联的任务。
+- `category`：当前可能是 `task_completed`、`task_failed`、`task_cancelled` 或 `system`。
+- `content`：最终要转发给 IM 用户的文本内容。
+
+如果你的网关会重连 SSE，建议在本地维护已处理过的 `push.id` 集合，避免重复回推 IM。
+
+### 兜底方式：轮询 push 日志
+
+如果你的部署环境不方便维持 SSE，也可以轮询：
+
+```bash
+GET /push?sessionId=0f7c1d45-4e1c-47f2-b1c7-5a2f2f9f8d2d&limit=20
+```
+
+这会返回最近的主动推送消息列表。相比 SSE，轮询的实时性和去重成本都更差，所以更适合作为补偿机制，而不是首选通道。
+
+### 查看当前外部会话的任务
+
+```bash
+GET /adapters/im/tasks?source=wecom&conversationId=group-001
+```
+
+返回示例：
+
+```json
+{
+	"source": "wecom",
+	"conversationId": "group-001",
+	"sessionId": "0f7c1d45-4e1c-47f2-b1c7-5a2f2f9f8d2d",
+	"tasks": []
+}
+```
+
+这个接口适合在 IM 侧实现“查看当前排队任务”“显示处理中状态”等辅助能力。
+
+### 常见接入模式
+
+#### 模式一：Webhook 网关 + SSE 回推
+
+最推荐，适合企业微信、飞书、钉钉这类平台：
+
+1. 平台回调消息到你的网关。
+2. 网关调用 `POST /adapters/im/messages`。
+3. 网关立即向平台返回“已收到”或空成功响应。
+4. 网关通过 SSE 收到后续结果，再调用平台发消息接口回推给用户。
+
+#### 模式二：Webhook 网关 + 定时轮询
+
+适合不方便维持 SSE 长连接的场景：
+
+1. 平台回调消息到你的网关。
+2. 网关调用 `POST /adapters/im/messages`。
+3. 网关记录 `sessionId` 和 `acceptedMessageId`。
+4. 后台定时调用 `GET /push` 或 `GET /adapters/im/tasks`，拿到结果后再回推平台。
+
+### 推荐的网关职责
+
+本项目当前只负责“消息接收、会话管理、任务执行和主动推送”，以下能力建议放在你的 IM 网关层实现：
+
+- 验签与来源校验。
+- 平台消息 ID 去重。
+- 用户、群组、租户等业务身份映射。
+- 把 SSE/push 结果转换成对应 IM 平台的发送 API 调用。
+- 重试、失败告警和死信处理。
+
+### 一个最小接入流程
+
+```bash
+curl -X POST http://127.0.0.1:3000/adapters/im/messages \
+	-H "Content-Type: application/json" \
+	-d "{\"source\":\"wecom\",\"conversationId\":\"group-001\",\"userId\":\"zhangsan\",\"message\":\"帮我整理今天的日报\"}"
+```
+
+拿到响应中的 `sessionId` 后，再订阅：
+
+```bash
+curl -N "http://127.0.0.1:3000/events?sessionId=你的-sessionId&replay=20"
+```
+
+看到 `event: push` 后，把 `data.content` 转发回你的 IM 平台即可。
+
 ## HTTP API
 
 ### 健康检查
