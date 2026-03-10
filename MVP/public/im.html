@@ -31,11 +31,12 @@
       }
 
       .shell {
-        width: min(1200px, calc(100vw - 32px));
+        width: min(1480px, calc(100vw - 32px));
         margin: 24px auto;
         display: grid;
-        grid-template-columns: 320px 1fr;
+        grid-template-columns: 280px 320px minmax(0, 1fr);
         gap: 18px;
+        align-items: start;
       }
 
       .panel {
@@ -46,9 +47,21 @@
         backdrop-filter: blur(12px);
       }
 
+      .conversation-panel,
       .sidebar,
       .chat {
         padding: 18px;
+      }
+
+      .conversation-panel,
+      .sidebar {
+        align-self: start;
+      }
+
+      .chat {
+        display: grid;
+        grid-template-rows: auto minmax(360px, 56vh) auto;
+        gap: 18px;
       }
 
       h1,
@@ -170,9 +183,22 @@
       }
 
       .feed {
-        margin-top: 18px;
+        margin-top: 0;
         display: grid;
         gap: 12px;
+        min-height: 0;
+        max-height: 100%;
+        overflow-y: auto;
+        padding-right: 6px;
+      }
+
+      .feed::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      .feed::-webkit-scrollbar-thumb {
+        background: rgba(116, 107, 92, 0.35);
+        border-radius: 999px;
       }
 
       .bubble {
@@ -269,6 +295,9 @@
         margin-top: 18px;
         display: grid;
         gap: 10px;
+        max-height: 220px;
+        overflow-y: auto;
+        padding-right: 4px;
       }
 
       .task-item {
@@ -290,6 +319,53 @@
         margin-top: 14px;
       }
 
+      .conversation-list {
+        display: grid;
+        gap: 10px;
+        max-height: min(70vh, 720px);
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .conversation-item {
+        width: 100%;
+        text-align: left;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(127, 108, 84, 0.16);
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink);
+      }
+
+      .conversation-item.active {
+        background: linear-gradient(135deg, rgba(217, 239, 233, 0.92), rgba(255, 247, 239, 0.92));
+        border-color: rgba(13, 107, 95, 0.28);
+      }
+
+      .conversation-item strong,
+      .conversation-item span {
+        display: block;
+      }
+
+      .conversation-item strong {
+        margin-bottom: 6px;
+      }
+
+      .conversation-item span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .conversation-empty {
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px dashed var(--line);
+        background: rgba(255, 255, 255, 0.65);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
       .conversation-toolbar {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -306,11 +382,26 @@
         .row {
           grid-template-columns: 1fr;
         }
+
+        .conversation-panel,
+        .sidebar,
+        .chat {
+          width: 100%;
+        }
       }
     </style>
   </head>
   <body>
     <div class="shell">
+      <aside class="panel conversation-panel">
+        <h1 class="title">对话列表</h1>
+        <p class="subtitle">左侧维护历史会话，点击即可切换当前上下文。</p>
+
+        <div class="section">
+          <div class="conversation-list" id="conversationList"></div>
+        </div>
+      </aside>
+
       <aside class="panel sidebar">
         <h1 class="title">IM Demo</h1>
         <p class="subtitle">用浏览器模拟一个接入外部 IM 的最小验证页。</p>
@@ -378,6 +469,7 @@
       const streamStateNode = document.getElementById('streamState');
       const feedNode = document.getElementById('feed');
       const taskListNode = document.getElementById('taskList');
+      const conversationListNode = document.getElementById('conversationList');
       const sendButton = document.getElementById('sendButton');
       const connectButton = document.getElementById('connectButton');
       const newConversationButton = document.getElementById('newConversationButton');
@@ -386,25 +478,221 @@
       const interruptButton = document.getElementById('interruptButton');
       const clearSessionButton = document.getElementById('clearSessionButton');
 
+      const CONVERSATION_STORAGE_KEY = 'agentextend-im-demo-conversations-v1';
+      const ACTIVE_CONVERSATION_STORAGE_KEY = 'agentextend-im-demo-active-conversation-v1';
+
       let eventSource;
       let connectedSessionId = '';
       let localMessageSequence = 0;
-      const seenPushIds = new Set();
-      const feedItems = [];
+      let conversations = [];
+      let activeConversationId = '';
+
+      function loadConversationState() {
+        try {
+          const storedConversations = window.localStorage.getItem(CONVERSATION_STORAGE_KEY);
+          const storedActiveConversationId = window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY);
+          const parsed = storedConversations ? JSON.parse(storedConversations) : [];
+
+          conversations = Array.isArray(parsed)
+            ? parsed.map((item, index) => sanitizeConversation(item, index))
+            : [];
+
+          localMessageSequence = conversations.reduce((maxValue, conversation) => {
+            const conversationMax = conversation.messages.reduce((innerMax, message) => {
+              return Math.max(innerMax, Number(message.sequence) || 0);
+            }, 0);
+
+            return Math.max(maxValue, conversationMax);
+          }, 0);
+
+          if (storedActiveConversationId && conversations.some((item) => item.id === storedActiveConversationId)) {
+            activeConversationId = storedActiveConversationId;
+          } else if (conversations[0]) {
+            activeConversationId = conversations[0].id;
+          }
+        } catch (error) {
+          console.error('Failed to load conversations', error);
+          conversations = [];
+          activeConversationId = '';
+        }
+      }
+
+      function sanitizeConversation(value, index = 0) {
+        const conversationId = typeof value?.id === 'string' && value.id.trim().length > 0
+          ? value.id.trim()
+          : buildConversationId();
+        const messages = Array.isArray(value?.messages)
+          ? value.messages.map((message, messageIndex) => sanitizeMessage(message, messageIndex))
+          : [];
+        const seenPushIds = Array.isArray(value?.seenPushIds)
+          ? value.seenPushIds.filter((item) => typeof item === 'string' && item.trim().length > 0)
+          : [];
+        const createdAt = normalizeDate(value?.createdAt || new Date(Date.now() - index).toISOString());
+        const lastActiveAt = normalizeDate(value?.lastActiveAt || createdAt);
+
+        return {
+          id: conversationId,
+          source: typeof value?.source === 'string' && value.source.trim().length > 0 ? value.source.trim() : 'browser-demo',
+          userId: typeof value?.userId === 'string' && value.userId.trim().length > 0 ? value.userId.trim() : 'tester',
+          sessionId: typeof value?.sessionId === 'string' ? value.sessionId.trim() : '',
+          createdAt,
+          lastActiveAt,
+          messages,
+          seenPushIds
+        };
+      }
+
+      function sanitizeMessage(value, index = 0) {
+        const createdAt = normalizeDate(value?.createdAt);
+
+        return {
+          id: typeof value?.id === 'string' && value.id.trim().length > 0 ? value.id.trim() : `local-${Date.now()}-${index}`,
+          kind: typeof value?.kind === 'string' ? value.kind : 'assistant',
+          title: typeof value?.title === 'string' ? value.title : '消息',
+          content: typeof value?.content === 'string' ? value.content : '',
+          meta: typeof value?.meta === 'string' ? value.meta : '',
+          createdAt,
+          createdAtMs: Date.parse(createdAt) || Date.now(),
+          sequence: Number(value?.sequence) || index + 1
+        };
+      }
+
+      function persistConversationState() {
+        window.localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(conversations));
+
+        if (activeConversationId) {
+          window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, activeConversationId);
+        } else {
+          window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY);
+        }
+      }
+
+      function getActiveConversation() {
+        return conversations.find((item) => item.id === activeConversationId) || null;
+      }
+
+      function ensureConversation(overrides = {}) {
+        const requestedId = typeof overrides.id === 'string' && overrides.id.trim().length > 0
+          ? overrides.id.trim()
+          : activeConversationId || conversationInput.value.trim() || buildConversationId();
+        let conversation = conversations.find((item) => item.id === requestedId);
+
+        if (!conversation) {
+          conversation = sanitizeConversation({
+            id: requestedId,
+            source: overrides.source ?? (sourceInput.value.trim() || 'browser-demo'),
+            userId: overrides.userId ?? (userInput.value.trim() || 'tester'),
+            sessionId: overrides.sessionId ?? sessionInput.value.trim(),
+            createdAt: new Date().toISOString(),
+            lastActiveAt: new Date().toISOString(),
+            messages: [],
+            seenPushIds: []
+          }, conversations.length);
+          conversations.unshift(conversation);
+        }
+
+        conversation.source = typeof overrides.source === 'string' ? overrides.source.trim() : (sourceInput.value.trim() || conversation.source);
+        conversation.userId = typeof overrides.userId === 'string' ? overrides.userId.trim() : (userInput.value.trim() || conversation.userId);
+
+        if (typeof overrides.sessionId === 'string') {
+          conversation.sessionId = overrides.sessionId.trim();
+        } else if (sessionInput.value.trim()) {
+          conversation.sessionId = sessionInput.value.trim();
+        }
+
+        conversation.lastActiveAt = normalizeDate(overrides.lastActiveAt || new Date().toISOString());
+        activeConversationId = conversation.id;
+        persistConversationState();
+        renderConversationList();
+        syncInputsFromConversation(conversation);
+        return conversation;
+      }
+
+      function syncInputsFromConversation(conversation) {
+        if (!conversation) {
+          return;
+        }
+
+        sourceInput.value = conversation.source;
+        conversationInput.value = conversation.id;
+        userInput.value = conversation.userId;
+        sessionInput.value = conversation.sessionId;
+      }
+
+      function renderConversationList() {
+        conversationListNode.innerHTML = '';
+
+        if (conversations.length === 0) {
+          conversationListNode.innerHTML = '<div class="conversation-empty">当前还没有对话，点击“新建对话”即可开始。</div>';
+          return;
+        }
+
+        [...conversations]
+          .sort((left, right) => {
+            const leftTime = Date.parse(left.lastActiveAt || '') || 0;
+            const rightTime = Date.parse(right.lastActiveAt || '') || 0;
+            return rightTime - leftTime;
+          })
+          .forEach((conversation) => {
+            const previewMessage = conversation.messages[conversation.messages.length - 1];
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `conversation-item${conversation.id === activeConversationId ? ' active' : ''}`;
+            button.innerHTML = `
+              <strong>${escapeHtml(conversation.id)}</strong>
+              <span>${escapeHtml(conversation.source)} / ${escapeHtml(conversation.userId)}</span>
+              <span>${escapeHtml(previewMessage?.content?.slice(0, 42) || '暂无消息')}</span>
+              <span>${escapeHtml(conversation.sessionId || '未绑定 session')} | ${escapeHtml(formatTimestamp(conversation.lastActiveAt))}</span>
+            `;
+            button.addEventListener('click', () => {
+              selectConversation(conversation.id);
+            });
+            conversationListNode.appendChild(button);
+          });
+      }
+
+      function selectConversation(conversationId) {
+        const conversation = conversations.find((item) => item.id === conversationId);
+
+        if (!conversation) {
+          return;
+        }
+
+        activeConversationId = conversation.id;
+        conversation.lastActiveAt = normalizeDate(new Date().toISOString());
+        persistConversationState();
+        syncInputsFromConversation(conversation);
+        renderConversationList();
+        renderFeed();
+        if (eventSource) {
+          eventSource.close();
+          eventSource = undefined;
+        }
+        connectedSessionId = '';
+        streamStateNode.textContent = conversation.sessionId ? 'SSE: disconnected' : 'SSE: idle';
+        if (conversation.sessionId) {
+          connectSse();
+        } else {
+          setStatus(`已切换对话: ${conversation.id}`);
+        }
+        refreshTasks();
+      }
 
       function appendBubble(kind, title, content, meta, createdAt, itemId) {
+        const conversation = ensureConversation();
         const normalizedCreatedAt = normalizeDate(createdAt);
         const normalizedId = itemId || `local-${++localMessageSequence}`;
+        const seenPushIds = new Set(conversation.seenPushIds);
 
         if (kind === 'push' && seenPushIds.has(normalizedId)) {
           return;
         }
 
         if (kind === 'push') {
-          seenPushIds.add(normalizedId);
+          conversation.seenPushIds.push(normalizedId);
         }
 
-        feedItems.push({
+        conversation.messages.push({
           id: normalizedId,
           kind,
           title,
@@ -415,11 +703,21 @@
           sequence: localMessageSequence
         });
 
+        conversation.lastActiveAt = normalizedCreatedAt;
+        persistConversationState();
+        renderConversationList();
         renderFeed();
       }
 
       function renderFeed() {
-        const items = [...feedItems].sort((left, right) => {
+        const conversation = getActiveConversation();
+
+        if (!conversation) {
+          feedNode.innerHTML = '<article class="bubble push"><strong>系统消息</strong><div class="bubble-content"><p>当前没有选中的对话。</p></div><div class="meta">等待创建</div></article>';
+          return;
+        }
+
+        const items = [...conversation.messages].sort((left, right) => {
           if (left.createdAtMs !== right.createdAtMs) {
             return left.createdAtMs - right.createdAtMs;
           }
@@ -429,11 +727,20 @@
 
         feedNode.innerHTML = '';
 
+        if (items.length === 0) {
+          feedNode.innerHTML = '<article class="bubble push"><strong>系统消息</strong><div class="bubble-content"><p>当前对话还没有消息，发送一条内容或连接 SSE 后会显示在这里。</p></div><div class="meta">等待消息</div></article>';
+          return;
+        }
+
         items.forEach((item) => {
           const bubble = document.createElement('article');
           bubble.className = `bubble ${item.kind}`;
           bubble.innerHTML = `<strong>${escapeHtml(item.title)}</strong><div class="bubble-content">${renderMarkdown(item.content)}</div><div class="meta">${escapeHtml(buildMetaText(item.meta, item.createdAt))}</div>`;
           feedNode.appendChild(bubble);
+        });
+
+        requestAnimationFrame(() => {
+          feedNode.scrollTop = feedNode.scrollHeight;
         });
       }
 
@@ -466,19 +773,20 @@
         }
 
         connectedSessionId = '';
-        sessionInput.value = '';
-        localMessageSequence = 0;
-        seenPushIds.clear();
-        feedItems.length = 0;
-        renderFeed();
-        taskListNode.innerHTML = '<div class="task-item">当前没有任务。</div>';
         streamStateNode.textContent = 'SSE: disconnected';
+        taskListNode.innerHTML = '<div class="task-item">当前没有任务。</div>';
       }
 
       function createNewConversation() {
         const nextConversationId = buildConversationId();
-        conversationInput.value = nextConversationId;
         resetConversationState();
+        ensureConversation({
+          id: nextConversationId,
+          source: sourceInput.value.trim() || 'browser-demo',
+          userId: userInput.value.trim() || 'tester',
+          sessionId: ''
+        });
+        renderFeed();
         setStatus(`已创建新对话: ${nextConversationId}`);
       }
 
@@ -582,11 +890,16 @@
 
       async function sendImMessage() {
         const sentAt = new Date().toISOString();
-        const payload = {
+        const conversation = ensureConversation({
           source: sourceInput.value.trim(),
-          conversationId: conversationInput.value.trim(),
           userId: userInput.value.trim(),
-          sessionId: sessionInput.value.trim() || undefined,
+          sessionId: sessionInput.value.trim()
+        });
+        const payload = {
+          source: conversation.source,
+          conversationId: conversation.id,
+          userId: conversation.userId,
+          sessionId: conversation.sessionId || undefined,
           message: messageInput.value.trim()
         };
 
@@ -609,13 +922,16 @@
           const intentText = typeof data.intent === 'string' ? data.intent : 'unknown';
           const queuedTaskId = typeof data.queuedTaskId === 'string' ? data.queuedTaskId : '';
 
-          sessionInput.value = typeof data.sessionId === 'string' && data.sessionId.trim().length > 0
-            ? data.sessionId
-            : sessionInput.value;
+          if (typeof data.sessionId === 'string' && data.sessionId.trim().length > 0) {
+            conversation.sessionId = data.sessionId.trim();
+            sessionInput.value = conversation.sessionId;
+          }
           appendBubble('user', '用户输入', payload.message, `${payload.source} / ${payload.conversationId}`, sentAt);
           if (replyText) {
             appendBubble('assistant', '被动回复', replyText, `intent: ${intentText}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`, new Date().toISOString());
           }
+          persistConversationState();
+          renderConversationList();
           setStatus(replyText
             ? `已发送，当前 session: ${sessionInput.value}`
             : `任务已入队，等待推送。当前 session: ${sessionInput.value}${queuedTaskId ? ` | task: ${queuedTaskId}` : ''}`);
@@ -629,8 +945,13 @@
       }
 
       async function refreshTasks() {
-        const source = sourceInput.value.trim();
-        const conversationId = conversationInput.value.trim();
+        const conversation = ensureConversation({
+          source: sourceInput.value.trim(),
+          userId: userInput.value.trim(),
+          sessionId: sessionInput.value.trim()
+        });
+        const source = conversation.source;
+        const conversationId = conversation.id;
 
         if (!source || !conversationId) {
           taskListNode.innerHTML = '<div class="task-item">缺少 source 或 conversationId，无法查看任务。</div>';
@@ -641,8 +962,13 @@
         const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
 
         if (typeof payload.sessionId === 'string' && payload.sessionId.trim().length > 0) {
-          sessionInput.value = payload.sessionId;
+          conversation.sessionId = payload.sessionId.trim();
+          sessionInput.value = conversation.sessionId;
         }
+
+        conversation.lastActiveAt = normalizeDate(new Date().toISOString());
+        persistConversationState();
+        renderConversationList();
 
         taskListNode.innerHTML = '';
 
@@ -678,7 +1004,8 @@
       }
 
       async function interruptSession() {
-        const sessionId = sessionInput.value.trim();
+        const conversation = getActiveConversation();
+        const sessionId = conversation?.sessionId || sessionInput.value.trim();
 
         if (!sessionId) {
           setStatus('没有 sessionId，无法中断。');
@@ -695,7 +1022,8 @@
       }
 
       async function clearSession() {
-        const sessionId = sessionInput.value.trim();
+        const conversation = getActiveConversation();
+        const sessionId = conversation?.sessionId || sessionInput.value.trim();
 
         if (!sessionId) {
           setStatus('没有 sessionId，无法清空。');
@@ -704,6 +1032,12 @@
 
         try {
           await fetchJson(`/sessions/${encodeURIComponent(sessionId)}/clear`, { method: 'POST' });
+          if (conversation) {
+            conversation.sessionId = '';
+            sessionInput.value = '';
+            persistConversationState();
+            renderConversationList();
+          }
           appendBubble('push', '系统消息', '会话已清空。', sessionId, new Date().toISOString(), `system-clear:${sessionId}:${Date.now()}`);
           refreshTasks();
           setStatus('会话已清空。');
@@ -714,7 +1048,12 @@
       }
 
       function connectSse() {
-        const sessionId = sessionInput.value.trim();
+        const conversation = ensureConversation({
+          source: sourceInput.value.trim(),
+          userId: userInput.value.trim(),
+          sessionId: sessionInput.value.trim()
+        });
+        const sessionId = conversation.sessionId || sessionInput.value.trim();
 
         if (!sessionId) {
           setStatus('没有 sessionId，无法连接 SSE。');
@@ -731,7 +1070,7 @@
         }
 
         connectedSessionId = sessionId;
-        const replay = seenPushIds.size === 0 ? 20 : 0;
+        const replay = conversation.seenPushIds.length === 0 ? 20 : 0;
         eventSource = new EventSource(`/events?sessionId=${encodeURIComponent(sessionId)}&replay=${replay}`);
         streamStateNode.textContent = 'SSE: connecting';
 
@@ -784,6 +1123,19 @@
       runWorkerButton.addEventListener('click', runWorkerOnce);
       interruptButton.addEventListener('click', interruptSession);
       clearSessionButton.addEventListener('click', clearSession);
+      loadConversationState();
+      if (!getActiveConversation()) {
+        ensureConversation({
+          id: conversationInput.value.trim() || buildConversationId(),
+          source: sourceInput.value.trim() || 'browser-demo',
+          userId: userInput.value.trim() || 'tester',
+          sessionId: sessionInput.value.trim()
+        });
+      } else {
+        syncInputsFromConversation(getActiveConversation());
+      }
+      renderConversationList();
+      renderFeed();
       refreshTasks();
     </script>
   </body>
