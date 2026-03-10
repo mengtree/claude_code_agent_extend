@@ -239,6 +239,58 @@ async function testPushScheduleSendsMessageWithoutQueueTask(): Promise<void> {
   }
 }
 
+async function testIncomingPassiveReplyIsAlsoPushed(): Promise<void> {
+  const workspacePath = join(process.cwd(), '.tmp-agent-runtime-passive-reply-push-test');
+  await removeDirectoryWithRetry(workspacePath);
+  let runtime: AgentRuntime | undefined;
+
+  try {
+    const storage = new Storage(workspacePath);
+    const sessionManager = new SessionManager(storage, workspacePath);
+    const taskQueueService = new TaskQueueService(storage);
+    const runtimeTaskQueueService = createPassiveRuntimeTaskQueueService(taskQueueService);
+    const scheduleService = new ScheduleService(storage);
+
+    runtime = new AgentRuntime(
+      storage,
+      sessionManager,
+      runtimeTaskQueueService as never,
+      scheduleService,
+      {
+        parse: async (): Promise<IntentParseResult> => ({
+          intent: 'list_tasks',
+          acknowledgement: '当前没有任务。',
+          priority: 'normal'
+        })
+      } as never,
+      {} as never,
+      workspacePath
+    );
+
+    const accepted = await runtime.acceptIncomingMessage({
+      message: '列出当前任务',
+      externalSource: 'browser-demo',
+      externalConversationId: 'conversation-passive-reply'
+    });
+
+    await runtime.drainUntilIdle(10);
+
+    const pushMessages = await storage.loadPushMessages(10, accepted.sessionId);
+    const conversationMessages = await runtime.listConversationMessages('browser-demo', 'conversation-passive-reply');
+
+    assert.equal(pushMessages.length, 1);
+    assert.equal(pushMessages[0].category, 'passive_reply');
+    assert.equal(pushMessages[0].content, '当前没有任务。');
+    assert.equal(conversationMessages.length, 2);
+    assert.equal(conversationMessages[0].kind, 'user');
+    assert.equal(conversationMessages[1].kind, 'assistant');
+    assert.equal(conversationMessages[1].content, '当前没有任务。');
+  } finally {
+    await awaitBackgroundDrain(runtime);
+    await removeDirectoryWithRetry(workspacePath);
+  }
+}
+
 async function awaitBackgroundDrain(runtime: AgentRuntime | undefined): Promise<void> {
   const backgroundDrainPromise = (runtime as unknown as { backgroundDrainPromise?: Promise<void> } | undefined)?.backgroundDrainPromise;
 
@@ -284,6 +336,7 @@ async function main(): Promise<void> {
   await testDueScheduleEnqueuesQueueTask();
   await testCronScheduleDoesNotEnqueueRepeatedlyBeforeCompletion();
   await testPushScheduleSendsMessageWithoutQueueTask();
+  await testIncomingPassiveReplyIsAlsoPushed();
   console.log('AgentRuntime tests passed');
 }
 

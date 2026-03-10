@@ -160,7 +160,7 @@ export interface PushMessage {
   sessionId: string;
   claudeSessionId?: string;
   taskId?: string;
-  category: 'task_completed' | 'task_failed' | 'task_cancelled' | 'system';
+  category: 'task_completed' | 'task_failed' | 'task_cancelled' | 'system' | 'passive_reply';
   content: string;
   createdAt: string;
 }

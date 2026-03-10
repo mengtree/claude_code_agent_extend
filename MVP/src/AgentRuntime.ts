@@ -26,6 +26,12 @@ interface RunningTaskContext {
 
 type PushSubscriber = (message: PushMessage) => void;
 
+interface PushMessageOptions {
+  appendToConversation?: boolean;
+  title?: string;
+  meta?: string;
+}
+
 export class AgentRuntime {
   private readonly runningTasks = new Map<string, RunningTaskContext>();
   private readonly processingIncomingMessages = new Set<string>();
@@ -549,16 +555,17 @@ export class AgentRuntime {
     }
   }
 
-  private async pushMessage(message: PushMessage): Promise<void> {
+  private async pushMessage(message: PushMessage, options?: PushMessageOptions): Promise<void> {
     const session = await this.sessionManager.tryGetSession(message.sessionId);
+    const appendToConversation = options?.appendToConversation ?? true;
 
-    if (session) {
+    if (session && appendToConversation) {
       await this.appendConversationMessagesForSession(session, {
         id: message.id,
         kind: 'push',
-        title: '主动推送',
+        title: options?.title || '主动推送',
         content: message.content,
-        meta: `${message.category} | ${message.taskId || 'no-task'}`,
+        meta: options?.meta || `${message.category} | ${message.taskId || 'no-task'}`,
         createdAt: message.createdAt
       });
     }
@@ -731,13 +738,27 @@ export class AgentRuntime {
         const session = await this.sessionManager.tryGetSession(reply.sessionId);
 
         if (session) {
+          const replyCreatedAt = new Date().toISOString();
+
           await this.appendConversationMessagesForRequest(session, completedMessage, {
             id: randomUUID(),
             kind: 'assistant',
             title: '被动回复',
             content: reply.reply,
             meta: this.buildAssistantMeta(intent.intent, reply.queuedTask?.id),
-            createdAt: new Date().toISOString()
+            createdAt: replyCreatedAt
+          });
+
+          await this.pushMessage({
+            id: randomUUID(),
+            sessionId: session.id,
+            claudeSessionId: session.claudeSessionId,
+            taskId: reply.queuedTask?.id,
+            category: 'passive_reply',
+            content: reply.reply,
+            createdAt: replyCreatedAt
+          }, {
+            appendToConversation: false
           });
         }
       }

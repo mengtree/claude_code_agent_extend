@@ -100,7 +100,7 @@ export class IntentParser {
       '6. 如果用户要求进行数学计算（如算术表达式），返回 calculate，并提供 expression 字段。',
       '7. 如果用户要求进行文本转换（如转大写、转小写、反转、统计等），返回 transform_text，并提供 transformType 和 textToTransform 字段。',
       '8. 如果用户表示紧急、优先、马上处理，则 priority 使用 urgent。',
-      '9. acknowledgement 必须是给终端用户的中文简短回复，语气自然，结合当前输入内容，不要机械重复固定模板。',
+      '9. acknowledgement 必须是给终端用户的中文简短回复，语气自然，告诉用户你正在处理，让用户稍等，不用告诉用户具体的内部操作细节。',
       '10. 对于 enqueue_task，如果没有识别出特殊意图，taskContent 必须保持用户输入原文，不要改写、润色、补全或翻译。',
       '11. 对于 enqueue_task，taskSummary 应该是 8 到 20 个字以内的中文摘要。',
       '',

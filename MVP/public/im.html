@@ -1494,9 +1494,10 @@
 
         eventSource.addEventListener('push', (event) => {
           const payload = JSON.parse(event.data);
+          const title = payload.category === 'passive_reply' ? '被动回复' : '主动推送';
           appendBubble(
             'push',
-            '主动推送',
+            title,
             payload.content,
             `${payload.category} | ${payload.taskId || 'no-task'}`,
             payload.createdAt,
