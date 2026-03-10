@@ -1,14 +1,14 @@
 [
   {
-    "id": "13c78835-8a24-4669-b811-81748c5add22",
-    "sessionId": "821015d2-3b05-4527-84fa-6023e125f851",
-    "claudeSessionId": "27935f40-0190-4c03-83e8-16c02c0aa708",
-    "message": "把文件链接发给我",
+    "id": "758d6790-a670-4790-931f-f26da25acc0b",
+    "sessionId": "37d552fd-43f5-46ab-a0dd-9998e80b6b05",
+    "claudeSessionId": "c0c742d5-1ef0-4990-9ba3-578928297f52",
+    "message": "你能发送文件嘛？",
     "externalSource": "browser-demo",
-    "externalConversationId": "demo-room-20260310-105425-bxb1cb",
+    "externalConversationId": "demo-room-20260310-110704-obdcu3",
     "status": "processing",
-    "createdAt": "2026-03-10T03:00:42.036Z",
-    "updatedAt": "2026-03-10T03:00:42.046Z",
-    "startedAt": "2026-03-10T03:00:42.046Z"
+    "createdAt": "2026-03-10T03:07:49.609Z",
+    "updatedAt": "2026-03-10T03:07:49.618Z",
+    "startedAt": "2026-03-10T03:07:49.618Z"
   }
 ]
