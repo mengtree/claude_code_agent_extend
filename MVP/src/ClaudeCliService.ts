@@ -32,7 +32,7 @@ export function injectWorkspaceSystemPrompt(
   if (existsSync(skillsDirectory)) {
     parts.push(
       `该目录下存在项目级技能目录: ${skillsDirectory}`,
-      '如果任务与项目技能相关，请优先查看 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
+      '请优先查看项目级 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
       '不要假设 skills 不存在；需要时主动检查并使用其中的说明。'
     );
   }
