@@ -23,18 +23,10 @@ export function injectWorkspaceSystemPrompt(
   // 添加工作目录信息
   parts.push(`当前智能体服务工作目录: ${workingDirectory}`);
 
+
   // 添加 sessionId（如果提供）
   if (sessionId) {
     parts.push(`当前会话 ID（sessionId）: ${sessionId}`);
-  }
-
-  // 添加 skills 目录信息（如果存在）
-  if (existsSync(skillsDirectory)) {
-    parts.push(
-      `该目录下存在 skills 目录: ${skillsDirectory}`,
-      '请优先查看项目级 skills 目录中的 README.md、SKILL.md 以及相关脚本，再继续执行。',
-      '不要假设 skills 不存在；需要时主动检查并使用其中的说明。'
-    );
   }
 
   const workspacePrompt = parts.join('\n');
