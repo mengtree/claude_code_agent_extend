@@ -377,7 +377,7 @@ export class AgentRuntime {
       default: {
         const queuedTask = await this.taskQueueService.enqueue(
           session.id,
-          message,
+          message+`(已回复用户说了“${intent.acknowledgement}”，后面接着给结果就行了)`,
           intent.taskSummary || message,
           intent.priority
         );
