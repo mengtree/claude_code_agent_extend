@@ -1,0 +1,7 @@
+{
+  "port": 3012,
+  "host": "127.0.0.1",
+  "logLevel": "info",
+  "dataDir": "./runtime/data",
+  "sessionTimeoutDays": 30
+}

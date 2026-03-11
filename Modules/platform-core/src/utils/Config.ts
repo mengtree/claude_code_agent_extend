@@ -7,6 +7,10 @@
 import { readFile } from 'node:fs/promises';
 import type { ModuleConfig } from '../types/index.js';
 
+function getEnvValue(name: string): string | undefined {
+  return process.env[`PLATFORM_CORE_${name}`] ?? process.env[name];
+}
+
 /**
  * 配置文件路径
  */
@@ -30,12 +34,15 @@ const DEFAULT_CONFIG: ModuleConfig = {
  */
 export async function loadConfig(): Promise<ModuleConfig> {
   try {
+    console.info(`Loading configuration from ${CONFIG_PATH}...`);
     const content = await readFile(CONFIG_PATH, 'utf-8');
+    console.info('Configuration file loaded successfully');
     const config = JSON.parse(content) as Partial<ModuleConfig>;
 
     return { ...DEFAULT_CONFIG, ...config };
   } catch (error) {
     // 配置文件不存在或无效，使用默认配置
+    console.warn(`Failed to load configuration from ${CONFIG_PATH}, using default configuration.`);
     return { ...DEFAULT_CONFIG };
   }
 }
@@ -43,44 +50,51 @@ export async function loadConfig(): Promise<ModuleConfig> {
 /**
  * 从环境变量加载配置
  */
-export function loadConfigFromEnv(): ModuleConfig {
-  const config: ModuleConfig = { ...DEFAULT_CONFIG };
+export function loadConfigFromEnv(): Partial<ModuleConfig> {
+  const config: Partial<ModuleConfig> = {};
 
-  if (process.env.PORT) {
-    const port = parseInt(process.env.PORT, 10);
+  const portValue = getEnvValue('PORT');
+  if (portValue) {
+    const port = parseInt(portValue, 10);
     if (!isNaN(port) && port > 0 && port < 65536) {
       config.port = port;
     }
   }
 
-  if (process.env.HOST) {
-    config.host = process.env.HOST;
+  const hostValue = getEnvValue('HOST');
+  if (hostValue) {
+    config.host = hostValue;
   }
 
-  if (process.env.DEFAULT_MODEL) {
-    config.defaultModel = process.env.DEFAULT_MODEL;
+  const defaultModelValue = getEnvValue('DEFAULT_MODEL');
+  if (defaultModelValue) {
+    config.defaultModel = defaultModelValue;
   }
 
-  if (process.env.DEFAULT_TIMEOUT_MS) {
-    const timeout = parseInt(process.env.DEFAULT_TIMEOUT_MS, 10);
+  const defaultTimeoutValue = getEnvValue('DEFAULT_TIMEOUT_MS');
+  if (defaultTimeoutValue) {
+    const timeout = parseInt(defaultTimeoutValue, 10);
     if (!isNaN(timeout) && timeout > 0) {
       config.defaultTimeoutMs = timeout;
     }
   }
 
-  if (process.env.MAX_CONCURRENT_SESSIONS) {
-    const max = parseInt(process.env.MAX_CONCURRENT_SESSIONS, 10);
+  const maxConcurrentValue = getEnvValue('MAX_CONCURRENT_SESSIONS');
+  if (maxConcurrentValue) {
+    const max = parseInt(maxConcurrentValue, 10);
     if (!isNaN(max) && max > 0) {
       config.maxConcurrentSessions = max;
     }
   }
 
-  if (process.env.SESSION_PERSISTENCE) {
-    config.sessionPersistence = process.env.SESSION_PERSISTENCE === 'true';
+  const sessionPersistenceValue = getEnvValue('SESSION_PERSISTENCE');
+  if (sessionPersistenceValue) {
+    config.sessionPersistence = sessionPersistenceValue === 'true';
   }
 
-  if (process.env.LOG_LEVEL) {
-    const level = process.env.LOG_LEVEL;
+  const logLevelValue = getEnvValue('LOG_LEVEL');
+  if (logLevelValue) {
+    const level = logLevelValue;
     if (level === 'debug' || level === 'info' || level === 'warn' || level === 'error') {
       config.logLevel = level;
     }
@@ -96,5 +110,5 @@ export async function getConfig(): Promise<ModuleConfig> {
   const fileConfig = await loadConfig();
   const envConfig = loadConfigFromEnv();
 
-  return { ...fileConfig, ...envConfig };
+  return { ...DEFAULT_CONFIG, ...fileConfig, ...envConfig };
 }

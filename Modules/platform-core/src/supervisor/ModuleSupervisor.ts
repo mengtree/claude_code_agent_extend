@@ -6,8 +6,21 @@
 
 import { spawn, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { existsSync, readFileSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
+import { join } from 'node:path';
 import type { ModuleManifest, HealthCheckResult } from '../types/index.js';
 import type { ModuleRegistry } from '../registry/ModuleRegistry.js';
+
+const INHERITED_CONFIG_KEYS = [
+  'PORT',
+  'HOST',
+  'LOG_LEVEL',
+  'DEFAULT_MODEL',
+  'DEFAULT_TIMEOUT_MS',
+  'MAX_CONCURRENT_SESSIONS',
+  'SESSION_PERSISTENCE'
+] as const;
 
 /**
  * 模块进程信息
@@ -98,6 +111,12 @@ export class ModuleSupervisor extends EventEmitter {
     // 启动需要自动启动的模块
     const autoStartModules = this.registry.getAutoStartModules();
     for (const module of autoStartModules) {
+      // 跳过 platform-core 自身，因为它是运行时，不应该被自己启动
+      if (module.moduleId === 'platform-core') {
+        console.log('[ModuleSupervisor] Skipping platform-core (runtime itself)');
+        continue;
+      }
+
       try {
         await this.startModule(module.moduleId);
       } catch (error) {
@@ -164,7 +183,7 @@ export class ModuleSupervisor extends EventEmitter {
     const childProcess = spawn(command, args, {
       cwd,
       stdio: 'pipe',
-      env: { ...process.env },
+      env: this.createModuleEnvironment(moduleId, modulePath),
       detached: false
     });
 
@@ -432,20 +451,67 @@ export class ModuleSupervisor extends EventEmitter {
     }
   }
 
+  private createModuleEnvironment(moduleId: string, modulePath: string): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    const config = this.readModuleConfig(modulePath);
+    const envPrefix = this.getModuleEnvPrefix(moduleId);
+
+    for (const key of INHERITED_CONFIG_KEYS) {
+      delete env[key];
+      delete env[`PLATFORM_CORE_${key}`];
+    }
+
+    if (typeof config.port === 'number' && Number.isInteger(config.port)) {
+      env[`${envPrefix}_PORT`] = String(config.port);
+    }
+
+    if (typeof config.host === 'string' && config.host.length > 0) {
+      env[`${envPrefix}_HOST`] = config.host;
+    }
+
+    return env;
+  }
+
+  private readModuleConfig(modulePath: string): Record<string, unknown> {
+    const configPath = join(modulePath, 'config.json');
+
+    if (!existsSync(configPath)) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    } catch (error) {
+      console.warn(`[ModuleSupervisor] Failed to read config for ${modulePath}:`, error);
+      return {};
+    }
+  }
+
+  private getModuleEnvPrefix(moduleId: string): string {
+    return moduleId.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+  }
+
   /**
-   * 获取模块端口（简化版，实际应该从配置中读取）
+   * 获取模块端口
    */
   private getModulePort(moduleId: string): number {
-    // 简化实现：使用环境变量或默认端口
-    // 实际应该从模块配置中读取
-    const portEnv = process.env[`${moduleId.toUpperCase()}_PORT`];
+    const registryEntry = this.registry.getModule(moduleId);
+    if (registryEntry) {
+      const config = this.readModuleConfig(registryEntry.modulePath);
+      if (typeof config.port === 'number' && Number.isInteger(config.port)) {
+        return config.port;
+      }
+    }
+
+    const envPrefix = this.getModuleEnvPrefix(moduleId);
+    const portEnv = process.env[`${envPrefix}_PORT`];
     if (portEnv) {
       return parseInt(portEnv, 10);
     }
 
-    // 根据模块 ID 分配默认端口
     const portMap: Record<string, number> = {
       'platform-core': 3001,
+      'sessions': 3012,
       'im': 3010,
       'schedule': 3020,
       'config': 3030
@@ -460,15 +526,17 @@ export class ModuleSupervisor extends EventEmitter {
   private async fetchHTTP(url: string, options: { timeout?: number } = {}): Promise<{ statusCode: number }> {
     return new Promise((resolve, reject) => {
       const timeout = options.timeout || 5000;
+
+      const req = httpGet(url, (res) => {
+        clearTimeout(timer);
+        resolve({ statusCode: res.statusCode ?? 0 });
+        res.resume();
+      });
+
       const timer = setTimeout(() => {
         req.destroy();
         reject(new Error(`Request timeout: ${url}`));
       }, timeout);
-
-      const req = require('http').get(url, (res: any) => {
-        clearTimeout(timer);
-        resolve({ statusCode: res.statusCode });
-      });
 
       req.on('error', (err: Error) => {
         clearTimeout(timer);

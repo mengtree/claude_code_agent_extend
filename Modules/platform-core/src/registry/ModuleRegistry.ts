@@ -26,12 +26,12 @@ export class ModuleRegistry {
   /**
    * 初始化注册表，扫描并注册所有模块
    */
-  async initialize(): Promise<void> {
+  async initialize(): Promise<number> {
     if (!existsSync(this.modulesRoot)) {
       throw new Error(`Modules root directory not found: ${this.modulesRoot}`);
     }
 
-    await this.scanAndRegisterModules();
+    return await this.scanAndRegisterModules();
   }
 
   /**

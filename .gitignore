@@ -3,3 +3,6 @@ Modules/dist/*
 .gitignore
 Modules/node_modules/*
 Modules/.agent-platform/*
+**/dist/*
+**/node_modules/*
+Modules/**/runtime/*

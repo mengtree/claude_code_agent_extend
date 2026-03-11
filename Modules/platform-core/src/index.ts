@@ -2,9 +2,9 @@
  * 平台核心模块主入口
  *
  * 本模块是平台的核心，提供：
+ * - 模块运行时管理（Module Registry、Message Bus、Module Supervisor）
  * - Claude CLI SDK 对接能力
  * - 流式传输（SSE）支持
- * - 会话管理
  * - HTTP API
  *
  * @module platform-core
@@ -12,6 +12,7 @@
 
 import { resolve } from 'node:path';
 import { cwd } from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { ClaudeSdkService } from './services/ClaudeSdkService.js';
 import { SessionModel } from './models/Session.js';
 import { QueryController } from './controllers/QueryController.js';
@@ -20,6 +21,7 @@ import { HealthController } from './controllers/HealthController.js';
 import { createRouter } from './routes/Router.js';
 import { createLogger } from './utils/Logger.js';
 import { getConfig } from './utils/Config.js';
+import { createPlatformCoreRuntime, PlatformCoreRuntime } from './runtime/PlatformCoreRuntime.js';
 
 /**
  * 平台核心应用类
@@ -27,6 +29,7 @@ import { getConfig } from './utils/Config.js';
 export class PlatformCoreApp {
   private readonly config: Awaited<ReturnType<typeof getConfig>>;
   private readonly logger: ReturnType<typeof createLogger>;
+  private readonly runtime: PlatformCoreRuntime;
   private readonly sdkService: ClaudeSdkService;
   private readonly sessionModel: SessionModel;
   private readonly queryController: QueryController;
@@ -38,6 +41,17 @@ export class PlatformCoreApp {
   constructor(config: ModuleConfig) {
     this.config = config as Awaited<ReturnType<typeof getConfig>>;
     this.logger = createLogger(this.config.logLevel);
+
+    // 1. 创建平台核心运行时（负责模块管理）
+    // modulesRoot 应该是 Modules 目录，即当前目录的父目录
+    const modulesRoot = resolve(cwd(), '..');
+    this.runtime = createPlatformCoreRuntime({
+      modulesRoot,
+      logLevel: this.config.logLevel,
+      healthCheckInterval: 15000,
+      maxRestarts: 3,
+      restartBackoffMs: 5000
+    });
 
     // 获取数据目录路径
     const workspacePath = cwd();
@@ -70,20 +84,26 @@ export class PlatformCoreApp {
   async start(): Promise<void> {
     this.logger.info('Starting Platform Core Module...');
 
-    // 初始化会话存储
+    // 1. 启动平台核心运行时（扫描并加载所有模块）
+    this.logger.info('Initializing Platform Core Runtime...');
+    await this.runtime.start();
+
+    // 2. 初始化会话存储
     await this.sessionModel.initialize();
     this.logger.info('Session storage initialized');
 
-    // 设置默认会话 ID（可选）
+    // 3. 设置默认会话 ID（可选）
     // this.defaultSessionId = await this.getOrCreateDefaultSession();
 
-    // 启动 HTTP 服务器
+    // 4. 启动 HTTP 服务器
     const { port, host } = this.config;
+    
+    this.logger.info(`Platform Core Module: Starting HTTP server on http://${host}:${port}...`);
     await this.router.listen(port, host);
 
     this.logger.info(`Platform Core Module started on http://${host}:${port}`);
     this.logger.info(`Health check: http://${host}:${port}/health`);
-    this.logger.info('Ready to accept requests');
+    this.logger.info('Runtime status:', this.runtime.getStatus());
 
     // 设置优雅关闭
     this.setupGracefulShutdown();
@@ -100,6 +120,9 @@ export class PlatformCoreApp {
 
     // 停止 HTTP 服务器
     await this.router.close();
+
+    // 停止平台核心运行时（停止所有模块）
+    await this.runtime.stop();
 
     this.logger.info('Platform Core Module stopped');
   }
@@ -143,6 +166,13 @@ export class PlatformCoreApp {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
   }
+
+  /**
+   * 获取平台核心运行时
+   */
+  getRuntime(): PlatformCoreRuntime {
+    return this.runtime;
+  }
 }
 
 /**
@@ -163,16 +193,18 @@ async function main(): Promise<void> {
   }
 }
 
-// 仅当直接运行此模块时才启动
-const modulePath = new URL(import.meta.url).pathname;
-// Windows 路径处理：将 \ 转换为 /
-const normalizedArgv1 = process.argv[1]?.replace(/\\/g, '/');
-// 标准化模块路径用于比较
-const normalizedModulePath = modulePath.replace(/\\/g, '/');
+function isDirectRun(): boolean {
+  if (!process.argv[1]) {
+    return false;
+  }
 
-if (normalizedArgv1 === normalizedModulePath ||
-    process.argv[1]?.endsWith(normalizedModulePath) ||
-    normalizedArgv1?.endsWith('/dist/index.js') && import.meta.url.endsWith('/dist/index.js')) {
+  const entryPath = resolve(process.argv[1]);
+  const modulePath = resolve(fileURLToPath(import.meta.url));
+
+  return entryPath === modulePath;
+}
+
+if (isDirectRun()) {
   main().catch((error) => {
     console.error('Unhandled error:', error);
     process.exit(1);

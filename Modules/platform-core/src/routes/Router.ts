@@ -41,9 +41,16 @@ export class Router {
   }
 
   /**
-   * 创建并启动 HTTP 服务器
+   * 创建并启动 HTTP 服务器（非阻塞）
+   *
+   * 启动后立即返回，服务器在后台运行
    */
   async listen(port: number, host: string = '127.0.0.1'): Promise<void> {
+    // 如果已有服务器在运行，先关闭它
+    if (this.server) {
+      await this.close();
+    }
+
     this.server = createServer(async (request, response) => {
       try {
         await this.handleRequest(request, response);
@@ -53,8 +60,14 @@ export class Router {
       }
     });
 
+    // 启动服务器并立即返回（不阻塞）
     await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject);
+      this.server!.once('error', (err: Error) => {
+        // 只在初始启动时处理错误，运行时的错误由其他机制处理
+        if ((err as any).code === 'EADDRINUSE') {
+          reject(err);
+        }
+      });
       this.server!.listen(port, host, () => {
         this.server!.off('error', reject);
         resolve();

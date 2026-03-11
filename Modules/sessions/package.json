@@ -1,0 +1,30 @@
+{
+  "name": "@agent-platform/sessions",
+  "version": "0.1.0",
+  "description": "Sessions Module - 会话管理和对话功能",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "node --test dist/tests/**/*.test.js",
+    "clean": "rm -rf dist runtime/tmp"
+  },
+  "keywords": [
+    "agent-platform",
+    "sessions",
+    "session-management",
+    "conversation"
+  ],
+  "author": "Agent Platform Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
