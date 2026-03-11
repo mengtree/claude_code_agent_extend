@@ -1,1 +1,5 @@
 MVP/.agent-extend/*
+Modules/dist/*
+.gitignore
+Modules/node_modules/*
+Modules/.agent-platform/*
