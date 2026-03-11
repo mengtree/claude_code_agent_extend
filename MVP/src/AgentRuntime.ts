@@ -318,36 +318,36 @@ export class AgentRuntime {
     intent: IntentParseResult
   ): Promise<PassiveReply> {
     switch (intent.intent) {
-      case 'list_tasks': {
-        const currentTasks = await this.taskQueueService.list(session.id);
-        return {
-          sessionId: session.id,
-          claudeSessionId: session.claudeSessionId,
-          reply: this.formatTaskList(currentTasks),
-          intent: intent.intent,
-          tasks: currentTasks
-        };
-      }
-      case 'remove_task': {
-        if (!intent.taskId) {
-          return {
-            sessionId: session.id,
-            claudeSessionId: session.claudeSessionId,
-            reply: '没有识别到要移除的任务 ID，请明确提供任务 ID。',
-            intent: intent.intent
-          };
-        }
+      // case 'list_tasks': {
+      //   const currentTasks = await this.taskQueueService.list(session.id);
+      //   return {
+      //     sessionId: session.id,
+      //     claudeSessionId: session.claudeSessionId,
+      //     reply: this.formatTaskList(currentTasks),
+      //     intent: intent.intent,
+      //     tasks: currentTasks
+      //   };
+      // }
+      // case 'remove_task': {
+      //   if (!intent.taskId) {
+      //     return {
+      //       sessionId: session.id,
+      //       claudeSessionId: session.claudeSessionId,
+      //       reply: '没有识别到要移除的任务 ID，请明确提供任务 ID。',
+      //       intent: intent.intent
+      //     };
+      //   }
 
-        const removedTask = await this.taskQueueService.removeQueuedTask(session.id, intent.taskId);
-        return {
-          sessionId: session.id,
-          claudeSessionId: session.claudeSessionId,
-          reply: removedTask
-            ? `任务 ${removedTask.id} 已从队列移除。`
-            : `没有找到可移除的排队任务 ${intent.taskId}。`,
-          intent: intent.intent
-        };
-      }
+      //   const removedTask = await this.taskQueueService.removeQueuedTask(session.id, intent.taskId);
+      //   return {
+      //     sessionId: session.id,
+      //     claudeSessionId: session.claudeSessionId,
+      //     reply: removedTask
+      //       ? `任务 ${removedTask.id} 已从队列移除。`
+      //       : `没有找到可移除的排队任务 ${intent.taskId}。`,
+      //     intent: intent.intent
+      //   };
+      // }
       case 'interrupt': {
         await this.sessionManager.requestInterrupt(session.id);
         DebugLogger.warn('task.interrupt_requested', {
