@@ -42,7 +42,8 @@ Modules/
   <moduleId>/
     module.json
     skills/
-      SKILL.md
+      {moduleId}-skill
+        SKILL.md
     src/
     public/
     tests/

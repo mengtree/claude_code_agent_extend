@@ -1,0 +1,221 @@
+{
+  "moduleId": "platform-core",
+  "name": "Platform Core Module",
+  "version": "0.1.0",
+  "description": "核心平台模块 - 提供 Claude CLI SDK 对接和流式传输能力",
+  "kind": "core",
+  "entry": {
+    "command": "node",
+    "args": ["dist/index.js"]
+  },
+  "startup": {
+    "autoStart": true,
+    "daemon": true,
+    "restartPolicy": "on-failure",
+    "restartMaxRetries": 3,
+    "restartBackoffMs": 5000
+  },
+  "healthCheck": {
+    "type": "http",
+    "path": "/health",
+    "intervalMs": 15000,
+    "timeoutMs": 3000,
+    "unhealthyThreshold": 3
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "number",
+        "default": 3000,
+        "description": "HTTP 服务端口"
+      },
+      "host": {
+        "type": "string",
+        "default": "127.0.0.1",
+        "description": "HTTP 服务监听地址"
+      },
+      "defaultModel": {
+        "type": "string",
+        "default": "claude-sonnet-4-6",
+        "description": "默认使用的 Claude 模型"
+      },
+      "defaultTimeoutMs": {
+        "type": "number",
+        "default": 120000,
+        "description": "默认超时时间（毫秒）"
+      },
+      "maxConcurrentSessions": {
+        "type": "number",
+        "default": 100,
+        "description": "最大并发会话数"
+      },
+      "sessionPersistence": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否持久化会话"
+      },
+      "logLevel": {
+        "type": "string",
+        "enum": ["debug", "info", "warn", "error"],
+        "default": "info",
+        "description": "日志级别"
+      }
+    },
+    "required": ["port"]
+  },
+  "capabilities": [
+    {
+      "action": "query",
+      "description": "执行 Claude 查询并返回结果",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "model": { "type": "string" },
+          "stream": { "type": "boolean", "default": true }
+        },
+        "required": ["prompt"]
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "result": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "durationMs": { "type": "number" },
+          "costUsd": { "type": "number" }
+        }
+      },
+      "timeoutMs": 120000,
+      "idempotent": false
+    },
+    {
+      "action": "stream_query",
+      "description": "执行 Claude 查询并以流式方式返回结果（SSE）",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "model": { "type": "string" }
+        },
+        "required": ["prompt"]
+      },
+      "responseSchema": {
+        "type": "object",
+        "description": "通过 SSE 流式返回事件"
+      },
+      "timeoutMs": 120000,
+      "idempotent": false
+    },
+    {
+      "action": "create_session",
+      "description": "创建新的会话",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "externalSource": { "type": "string" },
+          "externalConversationId": { "type": "string" }
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "claudeSessionId": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      },
+      "timeoutMs": 5000,
+      "idempotent": true
+    },
+    {
+      "action": "list_sessions",
+      "description": "列出所有会话",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number" },
+          "status": { "type": "string", "enum": ["active", "deleted"] }
+        }
+      },
+      "responseSchema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "sessionId": { "type": "string" },
+            "claudeSessionId": { "type": "string" },
+            "status": { "type": "string" },
+            "createdAt": { "type": "string" },
+            "lastActiveAt": { "type": "string" }
+          }
+        }
+      },
+      "timeoutMs": 5000,
+      "idempotent": true
+    },
+    {
+      "action": "delete_session",
+      "description": "删除指定会话",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" }
+        },
+        "required": ["sessionId"]
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "deleted": { "type": "boolean" },
+          "sessionId": { "type": "string" }
+        }
+      },
+      "timeoutMs": 5000,
+      "idempotent": true
+    },
+    {
+      "action": "get_health",
+      "description": "获取模块健康状态",
+      "requestSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "uptime": { "type": "number" },
+          "activeSessions": { "type": "number" },
+          "version": { "type": "string" }
+        }
+      },
+      "timeoutMs": 3000,
+      "idempotent": true
+    }
+  ],
+  "dataPolicy": {
+    "isolated": true,
+    "dataDir": "runtime/data",
+    "logDir": "runtime/logs",
+    "tmpDir": "runtime/tmp"
+  },
+  "permissions": {
+    "workspaceRead": true,
+    "workspaceWrite": false,
+    "network": true,
+    "processSpawn": false,
+    "envRead": true
+  },
+  "dependencies": {
+    "nodejs": ">=18.0.0",
+    "npm": [
+      "@anthropic-ai/claude-agent-sdk"
+    ]
+  }
+}

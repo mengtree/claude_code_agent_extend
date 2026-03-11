@@ -1,0 +1,6 @@
+
+### 
+POST http://localhost:3000/stream
+Content-Type: application/json
+
+{"prompt": "你好"}
