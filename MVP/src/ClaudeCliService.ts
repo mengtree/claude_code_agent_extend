@@ -16,7 +16,6 @@ export function injectWorkspaceSystemPrompt(
   workingDirectory: string,
   sessionId?: string
 ): string | undefined {
-  const skillsDirectory = join(workingDirectory, 'skills');
 
   const parts: string[] = [];
 
