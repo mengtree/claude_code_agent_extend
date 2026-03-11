@@ -10,13 +10,14 @@
  * @module sessions
  */
 
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { cwd } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { SessionModel } from './models/Session.js';
 import { SessionController } from './controllers/SessionController.js';
 import { HealthController } from './controllers/HealthController.js';
 import { MessageController } from './controllers/MessageController.js';
+import { PlaygroundController } from './controllers/PlaygroundController.js';
 import { createRouter } from './routes/Router.js';
 import { createLogger } from './utils/Logger.js';
 import { getConfig } from './utils/Config.js';
@@ -32,6 +33,7 @@ export class SessionsApp {
   private readonly sessionController: SessionController;
   private readonly healthController: HealthController;
   private readonly messageController: MessageController;
+  private readonly playgroundController: PlaygroundController;
   private readonly router: ReturnType<typeof createRouter>;
 
   constructor(config: SessionsConfig) {
@@ -39,8 +41,9 @@ export class SessionsApp {
     this.logger = createLogger(this.config.logLevel);
 
     // 获取数据目录路径
-    const workspacePath = cwd();
-    const dataDir = resolve(workspacePath, 'Modules', 'sessions', 'runtime', 'data');
+    const dataDir = isAbsolute(this.config.dataDir)
+      ? this.config.dataDir
+      : resolve(cwd(), this.config.dataDir);
 
     // 初始化模型
     this.sessionModel = new SessionModel({ dataDir });
@@ -49,6 +52,7 @@ export class SessionsApp {
     this.sessionController = new SessionController(this.sessionModel);
     this.healthController = HealthController ? new HealthController('0.1.0') : null as any;
     this.messageController = new MessageController();
+    this.playgroundController = new PlaygroundController();
 
     // 设置消息处理
     this.setupMessageHandlers();
@@ -58,6 +62,7 @@ export class SessionsApp {
       sessionController: this.sessionController,
       healthController: this.healthController,
       messageController: this.messageController,
+      playgroundController: this.playgroundController,
       sessionModel: this.sessionModel
     });
   }
@@ -180,6 +185,7 @@ export class SessionsApp {
 
     this.logger.info(`Sessions Module started on http://${host}:${port}`);
     this.logger.info(`Health check: http://${host}:${port}/health`);
+    this.logger.info(`Playground: http://${host}:${port}/playground`);
     this.logger.info('Ready to accept requests');
 
     // 设置优雅关闭

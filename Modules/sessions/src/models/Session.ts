@@ -11,7 +11,8 @@ import { existsSync } from 'node:fs';
 import type {
   StoredSession,
   SessionStatus,
-  CreateSessionRequest
+  CreateSessionRequest,
+  SessionMessage
 } from '../types/index.js';
 
 /**
@@ -30,11 +31,14 @@ export interface SessionStoreOptions {
 export class SessionModel {
   private readonly dataDir: string;
   private readonly sessionsFile: string;
+  private readonly messagesFile: string;
   private sessionsCache: Map<string, StoredSession> | null = null;
+  private messagesCache: Map<string, SessionMessage[]> | null = null;
 
   constructor(options: SessionStoreOptions) {
     this.dataDir = options.dataDir;
     this.sessionsFile = join(this.dataDir, 'sessions.json');
+    this.messagesFile = join(this.dataDir, 'messages.json');
   }
 
   /**
@@ -45,6 +49,7 @@ export class SessionModel {
       await mkdir(this.dataDir, { recursive: true });
     }
     await this.loadSessions();
+    await this.loadMessages();
   }
 
   /**
@@ -169,6 +174,61 @@ export class SessionModel {
   }
 
   /**
+   * 获取会话消息
+   */
+  async listMessages(sessionId: string): Promise<SessionMessage[]> {
+    await this.ensureMessagesLoaded();
+    return [...(this.messagesCache?.get(sessionId) || [])];
+  }
+
+  /**
+   * 提交消息并生成本地测试回复
+   */
+  async submitMessage(sessionId: string, message: string): Promise<{
+    userMessage: SessionMessage;
+    assistantMessage: SessionMessage;
+    messages: SessionMessage[];
+  }> {
+    const session = await this.findById(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    await this.ensureMessagesLoaded();
+
+    const history = [...(this.messagesCache?.get(sessionId) || [])];
+    const now = new Date().toISOString();
+
+    const userMessage: SessionMessage = {
+      id: randomUUID(),
+      sessionId,
+      role: 'user',
+      content: message,
+      createdAt: now
+    };
+
+    const assistantMessage: SessionMessage = {
+      id: randomUUID(),
+      sessionId,
+      role: 'assistant',
+      content: this.buildAssistantReply(session, message, history.length),
+      createdAt: new Date().toISOString()
+    };
+
+    history.push(userMessage, assistantMessage);
+    this.messagesCache?.set(sessionId, history);
+
+    await this.persistMessages();
+    await this.touch(sessionId);
+
+    return {
+      userMessage,
+      assistantMessage,
+      messages: [...history]
+    };
+  }
+
+  /**
    * 更新会话活跃时间
    */
   async touch(sessionId: string): Promise<void> {
@@ -202,6 +262,11 @@ export class SessionModel {
 
     this.sessionsCache?.delete(sessionId);
     await this.persistSessions();
+
+    await this.ensureMessagesLoaded();
+    this.messagesCache?.delete(sessionId);
+    await this.persistMessages();
+
     return true;
   }
 
@@ -260,6 +325,20 @@ export class SessionModel {
   }
 
   /**
+   * 持久化所有消息到磁盘
+   */
+  private async persistMessages(): Promise<void> {
+    if (!this.messagesCache) return;
+
+    const payload = Object.fromEntries(this.messagesCache.entries());
+    await writeFile(
+      this.messagesFile,
+      JSON.stringify(payload, null, 2),
+      'utf-8'
+    );
+  }
+
+  /**
    * 从磁盘加载会话
    */
   private async loadSessions(): Promise<void> {
@@ -280,12 +359,63 @@ export class SessionModel {
   }
 
   /**
+   * 从磁盘加载消息
+   */
+  private async loadMessages(): Promise<void> {
+    try {
+      if (existsSync(this.messagesFile)) {
+        const content = await readFile(this.messagesFile, 'utf-8');
+        const messagesObject = JSON.parse(content) as Record<string, SessionMessage[]>;
+        this.messagesCache = new Map(Object.entries(messagesObject));
+      } else {
+        this.messagesCache = new Map();
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      this.messagesCache = new Map();
+    }
+  }
+
+  /**
    * 确保会话已加载
    */
   private async ensureSessionsLoaded(): Promise<void> {
     if (!this.sessionsCache) {
       await this.loadSessions();
     }
+  }
+
+  /**
+   * 确保消息已加载
+   */
+  private async ensureMessagesLoaded(): Promise<void> {
+    if (!this.messagesCache) {
+      await this.loadMessages();
+    }
+  }
+
+  /**
+   * 生成本地测试回复
+   */
+  private buildAssistantReply(
+    session: StoredSession,
+    message: string,
+    previousMessageCount: number
+  ): string {
+    const mappings = session.externalMappings.length > 0
+      ? session.externalMappings
+          .map(mapping => `${mapping.source}/${mapping.conversationId}`)
+          .join(', ')
+      : 'none';
+
+    return [
+      'This is a local test reply from the sessions module.',
+      `Received: ${message}`,
+      `Session: ${session.id}`,
+      `External mappings: ${mappings}`,
+      `Messages before this turn: ${previousMessageCount}`,
+      'Claude SDK is not connected yet; this page is for API smoke testing.'
+    ].join('\n');
   }
 
   /**

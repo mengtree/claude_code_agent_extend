@@ -128,6 +128,49 @@ export interface MessageResponse {
 }
 
 /**
+ * 会话消息角色
+ */
+export type MessageRole = 'user' | 'assistant' | 'system';
+
+/**
+ * 会话消息
+ */
+export interface SessionMessage {
+  /** 消息 ID */
+  id: string;
+  /** 会话 ID */
+  sessionId: string;
+  /** 发送方角色 */
+  role: MessageRole;
+  /** 消息内容 */
+  content: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+/**
+ * 发送会话消息请求
+ */
+export interface SendSessionMessageRequest {
+  /** 消息内容 */
+  message: string;
+}
+
+/**
+ * 发送会话消息响应
+ */
+export interface SendSessionMessageResponse {
+  /** 会话 ID */
+  sessionId: string;
+  /** 用户消息 */
+  userMessage: SessionMessage;
+  /** 助手回复 */
+  reply: SessionMessage;
+  /** 当前会话全部消息 */
+  messages: SessionMessage[];
+}
+
+/**
  * 健康检查响应
  */
 export interface HealthCheckResponse {

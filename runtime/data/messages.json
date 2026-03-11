@@ -1,0 +1,18 @@
+{
+  "7c4844eb-09ef-4d67-895a-6a930482d916": [
+    {
+      "id": "ea3922db-f3a5-4a71-af4b-704059ccc758",
+      "sessionId": "7c4844eb-09ef-4d67-895a-6a930482d916",
+      "role": "user",
+      "content": "你好，做一次 smoke test",
+      "createdAt": "2026-03-11T13:24:24.579Z"
+    },
+    {
+      "id": "edf9a6d7-a997-49ac-a72b-e95328398e76",
+      "sessionId": "7c4844eb-09ef-4d67-895a-6a930482d916",
+      "role": "assistant",
+      "content": "This is a local test reply from the sessions module.\nReceived: 你好，做一次 smoke test\nSession: 7c4844eb-09ef-4d67-895a-6a930482d916\nExternal mappings: smoke/conv-001\nMessages before this turn: 0\nClaude SDK is not connected yet; this page is for API smoke testing.",
+      "createdAt": "2026-03-11T13:24:24.579Z"
+    }
+  ]
+}

@@ -10,7 +10,10 @@ import type {
   CreateSessionRequest,
   CreateSessionResponse,
   SessionInfo,
-  ListSessionsRequest
+  ListSessionsRequest,
+  SendSessionMessageRequest,
+  SendSessionMessageResponse,
+  StoredSession
 } from '../types/index.js';
 import { SessionModel } from '../models/Session.js';
 import { ValidationError, SessionNotFoundError } from '../types/index.js';
@@ -55,14 +58,7 @@ export class SessionController {
         throw new SessionNotFoundError(sessionId);
       }
 
-      const sessionInfo: SessionInfo = {
-        sessionId: session.id,
-        claudeSessionId: session.claudeSessionId,
-        status: session.status,
-        createdAt: session.createdAt,
-        lastActiveAt: session.lastActiveAt,
-        externalMappings: session.externalMappings
-      };
+      const sessionInfo = this.toSessionInfo(session);
 
       this.sendJson(response, 200, sessionInfo);
     } catch (error) {
@@ -87,16 +83,65 @@ export class SessionController {
 
       const sessions = await this.sessionModel.list(listRequest);
 
-      const sessionInfos: SessionInfo[] = sessions.map(session => ({
-        sessionId: session.id,
-        claudeSessionId: session.claudeSessionId,
-        status: session.status,
-        createdAt: session.createdAt,
-        lastActiveAt: session.lastActiveAt,
-        externalMappings: session.externalMappings
-      }));
+      const sessionInfos: SessionInfo[] = sessions.map(session => this.toSessionInfo(session));
 
       this.sendJson(response, 200, sessionInfos);
+    } catch (error) {
+      this.handleError(response, error);
+    }
+  }
+
+  /**
+   * 处理获取会话消息请求（GET /sessions/:sessionId/messages）
+   */
+  async handleGetMessages(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    try {
+      const sessionId = this.extractSessionId(request);
+      const session = await this.sessionModel.findById(sessionId);
+
+      if (!session) {
+        throw new SessionNotFoundError(sessionId);
+      }
+
+      const messages = await this.sessionModel.listMessages(sessionId);
+
+      this.sendJson(response, 200, {
+        sessionId,
+        messages
+      });
+    } catch (error) {
+      this.handleError(response, error);
+    }
+  }
+
+  /**
+   * 处理发送会话消息请求（POST /sessions/:sessionId/messages）
+   */
+  async handleSendMessage(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    try {
+      const sessionId = this.extractSessionId(request);
+      const session = await this.sessionModel.findById(sessionId);
+
+      if (!session) {
+        throw new SessionNotFoundError(sessionId);
+      }
+
+      if (session.status !== 'active') {
+        throw new ValidationError('Cannot send messages to a deleted session');
+      }
+
+      const body = await this.readJsonBody(request);
+      const sendRequest = this.validateSendMessageRequest(body);
+      const result = await this.sessionModel.submitMessage(sessionId, sendRequest.message);
+
+      const payload: SendSessionMessageResponse = {
+        sessionId,
+        userMessage: result.userMessage,
+        reply: result.assistantMessage,
+        messages: result.messages
+      };
+
+      this.sendJson(response, 200, payload);
     } catch (error) {
       this.handleError(response, error);
     }
@@ -161,6 +206,24 @@ export class SessionController {
   }
 
   /**
+   * 验证发送消息请求
+   */
+  private validateSendMessageRequest(body: unknown): SendSessionMessageRequest {
+    if (!body || typeof body !== 'object') {
+      throw new ValidationError('Request body must be a valid object');
+    }
+
+    const req = body as Record<string, unknown>;
+    const message = typeof req.message === 'string' ? req.message.trim() : '';
+
+    if (!message) {
+      throw new ValidationError('message is required');
+    }
+
+    return { message };
+  }
+
+  /**
    * 解析可选数字参数
    */
   private parseOptionalNumber(value: string | null): number | null {
@@ -178,6 +241,20 @@ export class SessionController {
       return value;
     }
     return undefined;
+  }
+
+  /**
+   * 转换会话模型为 API 响应
+   */
+  private toSessionInfo(session: StoredSession): SessionInfo {
+    return {
+      sessionId: session.id,
+      claudeSessionId: session.claudeSessionId,
+      status: session.status,
+      createdAt: session.createdAt,
+      lastActiveAt: session.lastActiveAt,
+      externalMappings: session.externalMappings
+    };
   }
 
   /**

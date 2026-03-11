@@ -8,6 +8,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import type { SessionController } from '../controllers/SessionController.js';
 import type { HealthController } from '../controllers/HealthController.js';
 import type { MessageController } from '../controllers/MessageController.js';
+import type { PlaygroundController } from '../controllers/PlaygroundController.js';
 import type { SessionModel } from '../models/Session.js';
 
 /**
@@ -18,6 +19,7 @@ export interface RouterOptions {
   sessionController: SessionController;
   healthController: HealthController;
   messageController: MessageController;
+  playgroundController: PlaygroundController;
   sessionModel: SessionModel;
 }
 
@@ -28,6 +30,7 @@ export class Router {
   private readonly sessionController: SessionController;
   private readonly healthController: HealthController;
   private readonly messageController: MessageController;
+  private readonly playgroundController: PlaygroundController;
   private readonly sessionModel: SessionModel;
   private server: Server | null = null;
 
@@ -35,6 +38,7 @@ export class Router {
     this.sessionController = options.sessionController;
     this.healthController = options.healthController;
     this.messageController = options.messageController;
+    this.playgroundController = options.playgroundController;
     this.sessionModel = options.sessionModel;
   }
 
@@ -105,6 +109,11 @@ export class Router {
 
     try {
       // 路由分发
+      if ((path === '/' || path === '/playground') && method === 'GET') {
+        this.playgroundController.handlePage(response);
+        return;
+      }
+
       if (path === '/health' && method === 'GET') {
         const stats = await this.sessionModel.getStats();
         await this.healthController.handleHealth(response, stats.active);
@@ -154,6 +163,9 @@ export class Router {
     request: IncomingMessage,
     response: ServerResponse
   ): Promise<void> {
+    const isSessionDetailRoute = /^\/sessions\/[^/]+$/.test(path);
+    const isSessionMessagesRoute = /^\/sessions\/[^/]+\/messages$/.test(path);
+
     // POST /sessions - 创建会话
     if (path === '/sessions' && method === 'POST') {
       await this.sessionController.handleCreateSession(request, response);
@@ -166,14 +178,26 @@ export class Router {
       return;
     }
 
+    // GET /sessions/:sessionId/messages - 获取会话消息
+    if (isSessionMessagesRoute && method === 'GET') {
+      await this.sessionController.handleGetMessages(request, response);
+      return;
+    }
+
+    // POST /sessions/:sessionId/messages - 发送消息
+    if (isSessionMessagesRoute && method === 'POST') {
+      await this.sessionController.handleSendMessage(request, response);
+      return;
+    }
+
     // GET /sessions/:sessionId - 获取会话
-    if (path.startsWith('/sessions/') && method === 'GET') {
+    if (isSessionDetailRoute && method === 'GET') {
       await this.sessionController.handleGetSession(request, response);
       return;
     }
 
     // DELETE /sessions/:sessionId - 删除会话
-    if (path.startsWith('/sessions/') && method === 'DELETE') {
+    if (isSessionDetailRoute && method === 'DELETE') {
       await this.sessionController.handleDeleteSession(request, response);
       return;
     }

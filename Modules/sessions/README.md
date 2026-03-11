@@ -49,6 +49,8 @@ npm run dev
 GET /health
 ```
 
+浏览器测试页可直接访问 `http://127.0.0.1:3010/playground`。
+
 返回服务状态和运行信息。
 
 ### 创建会话
@@ -57,6 +59,27 @@ GET /health
 POST /sessions
 Content-Type: application/json
 
+### 获取会话消息
+
+```
+GET /sessions/{sessionId}/messages
+```
+
+返回指定会话的消息历史。
+
+### 发送会话消息
+
+```
+POST /sessions/{sessionId}/messages
+Content-Type: application/json
+
+{
+  "message": "你好，帮我确认当前状态"
+}
+```
+
+返回用户消息、模块生成的测试回复，以及当前会话全部消息。
+
 {
   "externalSource": "wechat",
   "externalConversationId": "conv-001"
@@ -64,6 +87,15 @@ Content-Type: application/json
 ```
 
 返回：
+
+### 测试页面
+
+```
+GET /
+GET /playground
+```
+
+返回一个内置的前端测试页面，可在浏览器中创建会话、查看会话列表、发送测试消息。
 ```json
 {
   "sessionId": "uuid",

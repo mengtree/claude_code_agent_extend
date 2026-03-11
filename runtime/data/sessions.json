@@ -1,0 +1,16 @@
+[
+  {
+    "id": "7c4844eb-09ef-4d67-895a-6a930482d916",
+    "status": "active",
+    "createdAt": "2026-03-11T13:24:01.983Z",
+    "updatedAt": "2026-03-11T13:24:24.581Z",
+    "lastActiveAt": "2026-03-11T13:24:24.581Z",
+    "externalMappings": [
+      {
+        "source": "smoke",
+        "conversationId": "conv-001",
+        "mappedAt": "2026-03-11T13:24:01.983Z"
+      }
+    ]
+  }
+]
