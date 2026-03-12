@@ -21,6 +21,7 @@
   "author": "Agent Platform Team",
   "license": "MIT",
   "dependencies": {
+    "@agent-platform/module-message-bus-client": "file:../shared/module-message-bus-client",
     "@anthropic-ai/claude-agent-sdk": "^0.2.72"
   },
   "devDependencies": {

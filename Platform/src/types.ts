@@ -94,6 +94,32 @@ export interface MessageEnvelope {
   inReplyTo?: string;
 }
 
+export interface IntegrationPanelRegistration {
+  panelId: string;
+  moduleId: string;
+  name: string;
+  url: string;
+  token: string;
+  securedUrl: string;
+  description?: string;
+  icon?: string;
+  registeredAt: string;
+  updatedAt: string;
+}
+
+export interface IntegrationPanelRegisterPayload {
+  panelId?: string;
+  name: string;
+  url: string;
+  token: string;
+  description?: string;
+  icon?: string;
+}
+
+export interface IntegrationPanelUnregisterPayload {
+  panelId?: string;
+}
+
 export type MessageHandler = (envelope: MessageEnvelope) => void | Promise<void>;
 
 export interface ModuleRegistryOptions {

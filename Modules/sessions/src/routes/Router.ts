@@ -118,7 +118,7 @@ export class Router {
     try {
       // 路由分发
       if ((path === '/' || path === '/playground') && method === 'GET') {
-        await this.playgroundController.handlePage(response);
+        await this.playgroundController.handlePage(url, response);
         return;
       }
 

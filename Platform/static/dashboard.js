@@ -10,12 +10,14 @@ class PlatformDashboard {
     this.processes = [];
     this.messages = [];
     this.subscribers = [];
+    this.integrations = [];
     this.eventSource = null;
     this.filterStatus = '';
     this.filterKind = '';
     this.autoScroll = true;
     this.currentPage = 'dashboard';
     this.activities = [];
+    this.selectedIntegrationId = null;
 
     this.init();
   }
@@ -29,6 +31,7 @@ class PlatformDashboard {
 
   bindElements() {
     // Navigation elements
+    this.sidebarNav = document.querySelector('.sidebar-nav');
     this.navItems = document.querySelectorAll('.nav-item');
 
     // Page elements
@@ -39,6 +42,7 @@ class PlatformDashboard {
       adapters: document.getElementById('page-adapters'),
       executors: document.getElementById('page-executors'),
       managers: document.getElementById('page-managers'),
+      integration: document.getElementById('page-integration'),
       messages: document.getElementById('page-messages'),
       subscribers: document.getElementById('page-subscribers'),
       settings: document.getElementById('page-settings')
@@ -73,6 +77,12 @@ class PlatformDashboard {
     this.subscribersList = document.getElementById('subscribers-list');
     this.activityList = document.getElementById('activity-list');
     this.autoScrollCheckbox = document.getElementById('auto-scroll-messages');
+    this.integrationsNav = document.getElementById('integrations-nav');
+    this.integrationTitle = document.getElementById('integration-title');
+    this.integrationSubtitle = document.getElementById('integration-subtitle');
+    this.integrationFrame = document.getElementById('integration-frame');
+    this.integrationPlaceholder = document.getElementById('integration-placeholder');
+    this.integrationOpenLink = document.getElementById('integration-open-link');
 
     // Quick action buttons
     this.quickActionBtns = document.querySelectorAll('.quick-action-btn');
@@ -105,13 +115,20 @@ class PlatformDashboard {
   }
 
   bindEvents() {
-    // Navigation
-    this.navItems.forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        const page = item.dataset.page;
-        this.navigateTo(page);
-      });
+    this.sidebarNav.addEventListener('click', (event) => {
+      const item = event.target.closest('.nav-item');
+      if (!item) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (item.dataset.page === 'integration' && item.dataset.panelId) {
+        this.openIntegration(item.dataset.panelId);
+        return;
+      }
+
+      this.navigateTo(item.dataset.page || 'dashboard');
     });
 
     // Refresh
@@ -147,31 +164,86 @@ class PlatformDashboard {
       if (e.key === 'Escape') this.closeModal();
     });
 
+    if (this.integrationFrame) {
+      this.integrationFrame.addEventListener('load', () => {
+        this.setIntegrationFrameHeight(this.integrationFrame.offsetHeight || Math.max(window.innerHeight - 220, 720));
+      });
+    }
+
+    window.addEventListener('message', (event) => {
+      this.handleIntegrationFrameMessage(event);
+    });
+
+    window.addEventListener('resize', () => {
+      this.setIntegrationFrameHeight(Math.max(window.innerHeight - 220, 720));
+    });
+
     // Handle hash changes
     window.addEventListener('hashchange', () => {
       const hash = window.location.hash.slice(1) || 'dashboard';
-      this.navigateTo(hash);
+      this.handleRoute(hash);
     });
   }
 
-  navigateTo(page) {
+  handleRoute(route) {
+    if (route.startsWith('integration/')) {
+      this.openIntegration(decodeURIComponent(route.slice('integration/'.length)), false);
+      return;
+    }
+
+    this.navigateTo(route || 'dashboard', false);
+  }
+
+  navigateTo(page, updateHash = true) {
     if (!this.pages[page]) {
       page = 'dashboard';
     }
 
     // Update current page
     this.currentPage = page;
+    if (page !== 'integration') {
+      this.selectedIntegrationId = null;
+    }
 
-    // Update navigation
-    this.navItems.forEach(item => {
-      item.classList.toggle('active', item.dataset.page === page);
-    });
+    this.updateNavState();
 
     // Update pages
     Object.values(this.pages).forEach(p => p?.classList.remove('active'));
     this.pages[page]?.classList.add('active');
 
-    // Update page title
+    this.updatePageTitle();
+
+    if (updateHash) {
+      const targetHash = `#${page}`;
+      if (window.location.hash !== targetHash) {
+        history.pushState(null, '', targetHash);
+      }
+    }
+
+    // Render page-specific content
+    this.renderCurrentPage();
+  }
+
+  openIntegration(panelId, updateHash = true) {
+    this.selectedIntegrationId = panelId;
+    this.currentPage = 'integration';
+    this.ensureValidIntegrationSelection();
+    this.updateNavState();
+
+    Object.values(this.pages).forEach(p => p?.classList.remove('active'));
+    this.pages.integration?.classList.add('active');
+    this.updatePageTitle();
+    this.renderIntegrationPage();
+
+    if (updateHash) {
+      const targetHash = `#integration/${encodeURIComponent(this.selectedIntegrationId || panelId)}`;
+      if (window.location.hash !== targetHash) {
+        history.pushState(null, '', targetHash);
+      }
+    }
+  }
+
+  updatePageTitle() {
     const titles = {
       dashboard: '仪表板',
       modules: '所有模块',
@@ -183,15 +255,25 @@ class PlatformDashboard {
       subscribers: 'SSE 订阅者',
       settings: '系统配置'
     };
-    this.pageTitle.textContent = titles[page] || '仪表板';
 
-    // Update URL hash
-    if (window.location.hash !== `#${page}`) {
-      history.pushState(null, '', `#${page}`);
+    if (this.currentPage === 'integration') {
+      const panel = this.getSelectedIntegration();
+      this.pageTitle.textContent = panel ? panel.name : '集成面板';
+      return;
     }
 
-    // Render page-specific content
-    this.renderCurrentPage();
+    this.pageTitle.textContent = titles[this.currentPage] || '仪表板';
+  }
+
+  updateNavState() {
+    this.navItems = document.querySelectorAll('.nav-item');
+    this.navItems.forEach(item => {
+      const isIntegrationItem = item.dataset.page === 'integration';
+      const isActive = isIntegrationItem
+        ? this.currentPage === 'integration' && item.dataset.panelId === this.selectedIntegrationId
+        : item.dataset.page === this.currentPage;
+      item.classList.toggle('active', isActive);
+    });
   }
 
   renderCurrentPage() {
@@ -210,6 +292,9 @@ class PlatformDashboard {
         break;
       case 'managers':
         this.renderModulesTable(this.managersTableBody, this.modules.filter(m => m.kind === 'manager'));
+        break;
+      case 'integration':
+        this.renderIntegrationPage();
         break;
       case 'messages':
         this.renderMessages();
@@ -238,9 +323,12 @@ class PlatformDashboard {
         this.processes = data.processes || [];
         this.messages = data.messages?.items || [];
         this.subscribers = data.subscribers || [];
+        this.integrations = data.integrations || [];
 
         this.updateStats(data);
         this.updateNavBadges();
+        this.renderIntegrationNav();
+        this.ensureValidIntegrationSelection();
         this.renderDashboard();
         this.renderCurrentPage();
 
@@ -282,6 +370,95 @@ class PlatformDashboard {
         this.navBadges[key].textContent = value;
       }
     });
+  }
+
+  renderIntegrationNav() {
+    if (!this.integrationsNav) {
+      return;
+    }
+
+    if (!this.integrations.length) {
+      this.integrationsNav.innerHTML = '<div class="nav-empty">暂无已集成面板</div>';
+      this.updateNavState();
+      return;
+    }
+
+    this.integrationsNav.innerHTML = this.integrations.map(panel => `
+      <a href="#integration/${encodeURIComponent(panel.panelId)}" class="nav-item integration-nav-item" data-page="integration" data-panel-id="${this.escapeHtml(panel.panelId)}">
+        <span>${this.escapeHtml(panel.name)}</span>
+        <span class="integration-nav-meta">${this.escapeHtml(panel.moduleId)}</span>
+      </a>
+    `).join('');
+
+    this.updateNavState();
+  }
+
+  ensureValidIntegrationSelection() {
+    if (!this.integrations.length) {
+      return;
+    }
+
+    if (!this.selectedIntegrationId || !this.integrations.some(panel => panel.panelId === this.selectedIntegrationId)) {
+      this.selectedIntegrationId = this.integrations[0].panelId;
+    }
+  }
+
+  getSelectedIntegration() {
+    if (!this.selectedIntegrationId) {
+      return null;
+    }
+    return this.integrations.find(panel => panel.panelId === this.selectedIntegrationId) || null;
+  }
+
+  renderIntegrationPage() {
+    const panel = this.getSelectedIntegration();
+
+    if (!panel) {
+      this.integrationTitle.textContent = '集成面板';
+      this.integrationSubtitle.textContent = '从左侧选择已注册的模块面板。';
+      this.integrationPlaceholder.style.display = 'flex';
+      this.integrationFrame.classList.remove('visible');
+      this.integrationFrame.removeAttribute('src');
+      this.integrationOpenLink.classList.add('disabled');
+      this.integrationOpenLink.setAttribute('href', '#');
+      return;
+    }
+
+    this.integrationTitle.textContent = panel.name;
+    this.integrationSubtitle.textContent = panel.description || `来源模块: ${panel.moduleId}`;
+    this.integrationOpenLink.classList.remove('disabled');
+    this.integrationOpenLink.setAttribute('href', panel.securedUrl);
+    this.integrationPlaceholder.style.display = 'none';
+    this.integrationFrame.classList.add('visible');
+
+    if (this.integrationFrame.getAttribute('src') !== panel.securedUrl) {
+      this.integrationFrame.setAttribute('src', panel.securedUrl);
+    }
+
+    this.setIntegrationFrameHeight(Math.max(window.innerHeight - 220, 720));
+  }
+
+  setIntegrationFrameHeight(height) {
+    if (!this.integrationFrame) {
+      return;
+    }
+
+    const viewportLimit = Math.max(window.innerHeight - 140, 720);
+    const nextHeight = Math.max(720, Math.min(Number(height) || 720, viewportLimit));
+    this.integrationFrame.style.height = `${nextHeight}px`;
+  }
+
+  handleIntegrationFrameMessage(event) {
+    if (!this.integrationFrame || event.source !== this.integrationFrame.contentWindow) {
+      return;
+    }
+
+    const data = event.data;
+    if (!data || data.type !== 'agentextend:integration-panel-height') {
+      return;
+    }
+
+    this.setIntegrationFrameHeight((Number(data.height) || 720) + 8);
   }
 
   updateUptime(seconds) {
@@ -595,6 +772,10 @@ class PlatformDashboard {
         this.scrollToBottom(this.messagesContainer);
       }
     }
+
+    if (message.toModule === 'platform' && ['integration_panel_register', 'integration_panel_unregister'].includes(message.action)) {
+      this.loadInitialData();
+    }
   }
 
   scrollToBottom(element) {
@@ -872,5 +1053,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Handle initial hash
   const initialHash = window.location.hash.slice(1) || 'dashboard';
-  dashboard.navigateTo(initialHash);
+  dashboard.handleRoute(initialHash);
 });

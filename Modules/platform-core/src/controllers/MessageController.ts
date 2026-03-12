@@ -6,15 +6,15 @@
 
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createMessageBusClient, type ModuleMessageBusClient } from '@agent-platform/module-message-bus-client';
 import type { MessageEnvelope, MessageRequestHandler } from '../types/index.js';
-import type { MessageBusClient } from '../services/MessageBusClient.js';
 
 /**
  * 消息控制器类
  */
 export class MessageController {
   private readonly handlers: Map<string, MessageRequestHandler> = new Map();
-  private messageBusClient?: MessageBusClient;
+  private messageBusClient?: ModuleMessageBusClient<MessageEnvelope>;
   private sseSubscription?: {
     unsubscribe: () => void;
   };
@@ -44,36 +44,30 @@ export class MessageController {
    * 初始化消息总线客户端
    */
   private initMessageBus(baseURL: string, autoSubscribe: boolean): void {
-    // 动态导入 MessageBusClient
-    import('../services/MessageBusClient.js').then(({ createMessageBusClient }) => {
-      this.messageBusClient = createMessageBusClient(baseURL, this.moduleId);
+    this.messageBusClient = createMessageBusClient<MessageEnvelope>(baseURL, this.moduleId);
 
-      if (autoSubscribe) {
-        // 订阅发给我的消息
-        this.sseSubscription = this.messageBusClient.subscribeSSE(
-          {
-            topics: [`module.${this.moduleId}.*`]
+    if (autoSubscribe) {
+      this.sseSubscription = this.messageBusClient.subscribeSSE(
+        {
+          topics: [`module.${this.moduleId}.*`]
+        },
+        {
+          onMessage: this.handleBusMessage.bind(this),
+          onError: (error) => {
+            console.error(`[${this.moduleId}] Message bus error:`, error);
           },
-          {
-            onMessage: this.handleBusMessage.bind(this),
-            onError: (error) => {
-              console.error(`[${this.moduleId}] Message bus error:`, error);
-            },
-            onConnected: () => {
-              console.log(`[${this.moduleId}] Connected to message bus`);
-            },
-            onDisconnected: () => {
-              console.log(`[${this.moduleId}] Disconnected from message bus`);
-            },
-            autoReconnect: true
-          }
-        );
-      }
+          onConnected: () => {
+            console.log(`[${this.moduleId}] Connected to message bus`);
+          },
+          onDisconnected: () => {
+            console.log(`[${this.moduleId}] Disconnected from message bus`);
+          },
+          autoReconnect: true
+        }
+      );
+    }
 
-      console.log(`[${this.moduleId}] Message bus client initialized`);
-    }).catch((error) => {
-      console.error(`[${this.moduleId}] Failed to initialize message bus:`, error);
-    });
+    console.log(`[${this.moduleId}] Message bus client initialized`);
   }
 
   /**

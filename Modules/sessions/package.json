@@ -19,7 +19,10 @@
   ],
   "author": "Agent Platform Team",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "@agent-platform/module-integration-helper": "file:../shared/module-integration-helper",
+    "@agent-platform/module-message-bus-client": "file:../shared/module-message-bus-client"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"

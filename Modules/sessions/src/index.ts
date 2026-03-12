@@ -13,6 +13,7 @@
 import { isAbsolute, resolve } from 'node:path';
 import { cwd } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { createModuleIntegrationHelper, type ModuleIntegrationHelper } from '@agent-platform/module-integration-helper';
 import { SessionModel } from './models/Session.js';
 import { SessionController } from './controllers/SessionController.js';
 import { HealthController } from './controllers/HealthController.js';
@@ -41,6 +42,8 @@ export class SessionsApp {
   private readonly asyncMessageService: AsyncMessageService;
   private readonly sseManager: SSEManager;
   private readonly router: ReturnType<typeof createRouter>;
+  private readonly integrationHelper: ModuleIntegrationHelper;
+  private isStopping = false;
 
   constructor(config: SessionsConfig) {
     this.config = config as Awaited<ReturnType<typeof getConfig>>;
@@ -86,7 +89,19 @@ export class SessionsApp {
       autoSubscribe: true
     });
 
-    this.playgroundController = new PlaygroundController();
+    this.integrationHelper = createModuleIntegrationHelper({
+      moduleId: 'sessions',
+      sendToBus: async (config) => {
+        return this.messageController.sendToBus(config);
+      },
+      logger: this.logger,
+      panel: {
+        name: 'Sessions 对话面板',
+        url: this.getPlaygroundBaseUrl()
+      }
+    });
+
+    this.playgroundController = new PlaygroundController(this.integrationHelper);
 
     // 设置消息处理
     this.setupMessageHandlers();
@@ -217,9 +232,11 @@ export class SessionsApp {
 
     await this.router.listen(port, host);
 
+    await this.registerIntegrationPanel();
+
     this.logger.info(`Sessions Module started on http://${host}:${port}`);
     this.logger.info(`Health check: http://${host}:${port}/health`);
-    this.logger.info(`Playground: http://${host}:${port}/playground`);
+    this.logger.info(`Playground: ${this.getPlaygroundUrl()}`);
     this.logger.info(`Platform Core Messages: ${this.config.platformCoreUrl}/messages`);
     this.logger.info('Ready to accept requests');
 
@@ -231,7 +248,18 @@ export class SessionsApp {
    * 停止应用
    */
   async stop(): Promise<void> {
+    if (this.isStopping) {
+      return;
+    }
+
+    this.isStopping = true;
     this.logger.info('Stopping Sessions Module...');
+
+    try {
+      await this.unregisterIntegrationPanel();
+    } catch (error) {
+      this.logger.warn('Failed to unregister integration panel:', error);
+    }
 
     // 停止 HTTP 服务器
     await this.router.close();
@@ -246,6 +274,22 @@ export class SessionsApp {
     this.messageController.shutdown();
 
     this.logger.info('Sessions Module stopped');
+  }
+
+  private getPlaygroundBaseUrl(): string {
+    return `http://${this.config.host}:${this.config.port}/playground`;
+  }
+
+  private getPlaygroundUrl(): string {
+    return this.integrationHelper.getSecuredUrl();
+  }
+
+  private async registerIntegrationPanel(): Promise<void> {
+    await this.integrationHelper.register();
+  }
+
+  private async unregisterIntegrationPanel(): Promise<void> {
+    await this.integrationHelper.unregister();
   }
 
   /**

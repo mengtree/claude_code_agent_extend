@@ -85,6 +85,13 @@
         </div>
 
         <div class="nav-section">
+          <div class="nav-section-title">集成面板</div>
+          <div id="integrations-nav">
+            <div class="nav-empty">暂无已集成面板</div>
+          </div>
+        </div>
+
+        <div class="nav-section">
           <div class="nav-section-title">监控</div>
           <a href="#messages" class="nav-item" data-page="messages">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -401,6 +408,22 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="page" id="page-integration">
+          <section class="section integration-shell">
+            <div class="section-header integration-header">
+              <div>
+                <h2 id="integration-title">集成面板</h2>
+                <p class="integration-subtitle" id="integration-subtitle">从左侧选择已注册的模块面板。</p>
+              </div>
+              <a class="integration-open-link" id="integration-open-link" href="#" target="_blank" rel="noopener noreferrer">新窗口打开</a>
+            </div>
+            <div class="integration-frame-wrap" id="integration-frame-wrap">
+              <div class="integration-placeholder" id="integration-placeholder">暂无可用集成面板</div>
+              <iframe id="integration-frame" class="integration-frame" title="集成面板" loading="lazy" referrerpolicy="no-referrer"></iframe>
             </div>
           </section>
         </div>

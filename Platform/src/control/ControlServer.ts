@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PlatformRuntime } from '../runtime/PlatformRuntime.js';
 import { createLogger } from '../utils/Logger.js';
-import type { MessageEnvelope } from '../types.js';
+import type {
+  IntegrationPanelRegisterPayload,
+  IntegrationPanelRegistration,
+  IntegrationPanelUnregisterPayload,
+  MessageEnvelope
+} from '../types.js';
 import { randomUUID } from 'node:crypto';
 
 interface SSEConnection {
@@ -25,6 +30,7 @@ export class ControlServer {
   private readonly startedAt = Date.now();
   private readonly logger;
   private readonly sseConnections = new Map<string, SSEConnection>();
+  private readonly integrationPanels = new Map<string, IntegrationPanelRegistration>();
   private readonly staticDir: string;
 
   constructor(
@@ -37,6 +43,13 @@ export class ControlServer {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = join(__filename, '..');
     this.staticDir = join(__dirname, '../../static');
+
+    this.runtime.getSupervisor().on('module:stopped', ({ moduleId }) => {
+      this.unregisterPanelsForModule(moduleId);
+    });
+    this.runtime.getSupervisor().on('module:failed', ({ moduleId }) => {
+      this.unregisterPanelsForModule(moduleId);
+    });
   }
 
   async listen(port: number, host: string): Promise<void> {
@@ -78,6 +91,14 @@ export class ControlServer {
     // API endpoint for dashboard data
     if (method === 'GET' && url.pathname === '/api/dashboard') {
       this.sendJson(response, 200, this.getDashboardData());
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/integrations') {
+      this.sendJson(response, 200, {
+        ok: true,
+        items: this.getIntegrationPanels()
+      });
       return;
     }
 
@@ -286,6 +307,7 @@ export class ControlServer {
         count: messageBus.getAllHistory().length,
         items: messageBus.getAllHistory().slice(-100) // Last 100 messages
       },
+      integrations: this.getIntegrationPanels(),
       subscribers: Array.from(this.sseConnections.values()).map(conn => ({
         module: conn.module,
         topics: conn.topics,
@@ -325,6 +347,8 @@ export class ControlServer {
         timeoutMs: timeoutMs as number | undefined,
         createdAt: new Date().toISOString()
       };
+
+      this.handleIntegrationMessage(envelope);
 
       // 通过消息总线发送
       this.runtime.getMessageBus().send(envelope);
@@ -408,13 +432,15 @@ export class ControlServer {
    */
   private broadcastToSSE(envelope: MessageEnvelope): void {
     for (const connection of this.sseConnections.values()) {
+      const isDashboardConnection = connection.module.startsWith('dashboard-');
+
       // 检查目标模块匹配
-      if (envelope.toModule && envelope.toModule !== connection.module) {
+      if (!isDashboardConnection && envelope.toModule && envelope.toModule !== connection.module) {
         continue;
       }
 
       // 检查回复模块匹配
-      if (envelope.replyTo && envelope.replyTo !== connection.module) {
+      if (!isDashboardConnection && envelope.replyTo && envelope.replyTo !== connection.module) {
         continue;
       }
 
@@ -440,6 +466,94 @@ export class ControlServer {
       const eventType = envelope.replyTo === connection.module ? 'callback' : 'message';
       this.sendSSEEvent(connection.response, eventType, envelope);
     }
+  }
+
+  private handleIntegrationMessage(envelope: MessageEnvelope): void {
+    if (envelope.toModule !== 'platform') {
+      return;
+    }
+
+    if (envelope.action === 'integration_panel_register') {
+      this.registerIntegrationPanel(envelope.fromModule, envelope.payload);
+      return;
+    }
+
+    if (envelope.action === 'integration_panel_unregister') {
+      this.unregisterIntegrationPanel(envelope.fromModule, envelope.payload);
+    }
+  }
+
+  private registerIntegrationPanel(moduleId: string, payload: unknown): void {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('integration_panel_register payload must be an object');
+    }
+
+    const data = payload as IntegrationPanelRegisterPayload;
+    const panelId = typeof data.panelId === 'string' && data.panelId.trim() ? data.panelId.trim() : moduleId;
+    const name = typeof data.name === 'string' ? data.name.trim() : '';
+    const url = typeof data.url === 'string' ? data.url.trim() : '';
+    const token = typeof data.token === 'string' ? data.token.trim() : '';
+
+    if (!name || !url || !token) {
+      throw new Error('integration_panel_register requires name, url, token');
+    }
+
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error(`Unsupported integration panel protocol: ${parsedUrl.protocol}`);
+    }
+
+    parsedUrl.searchParams.set('token', token);
+
+    const existing = this.integrationPanels.get(panelId);
+    const now = new Date().toISOString();
+    this.integrationPanels.set(panelId, {
+      panelId,
+      moduleId,
+      name,
+      url,
+      token,
+      securedUrl: parsedUrl.toString(),
+      description: typeof data.description === 'string' && data.description.trim() ? data.description.trim() : undefined,
+      icon: typeof data.icon === 'string' && data.icon.trim() ? data.icon.trim() : undefined,
+      registeredAt: existing?.registeredAt || now,
+      updatedAt: now
+    });
+  }
+
+  private unregisterIntegrationPanel(moduleId: string, payload: unknown): void {
+    const data = payload && typeof payload === 'object'
+      ? payload as IntegrationPanelUnregisterPayload
+      : undefined;
+    const panelId = typeof data?.panelId === 'string' && data.panelId.trim() ? data.panelId.trim() : undefined;
+
+    if (panelId) {
+      const existing = this.integrationPanels.get(panelId);
+      if (existing?.moduleId === moduleId) {
+        this.integrationPanels.delete(panelId);
+      }
+      return;
+    }
+
+    this.unregisterPanelsForModule(moduleId);
+  }
+
+  private unregisterPanelsForModule(moduleId: string): void {
+    for (const [panelId, panel] of this.integrationPanels.entries()) {
+      if (panel.moduleId === moduleId) {
+        this.integrationPanels.delete(panelId);
+      }
+    }
+  }
+
+  private getIntegrationPanels(): IntegrationPanelRegistration[] {
+    return Array.from(this.integrationPanels.values()).sort((left, right) => {
+      const nameCompare = left.name.localeCompare(right.name, 'zh-CN');
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      return left.panelId.localeCompare(right.panelId, 'zh-CN');
+    });
   }
 
   /**

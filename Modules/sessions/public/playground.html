@@ -838,6 +838,47 @@
       }
     }
 
+    function postEmbedHeight() {
+      if (window.parent === window) {
+        return;
+      }
+
+      window.parent.postMessage({
+        type: 'agentextend:integration-panel-height',
+        panelId: 'sessions-playground',
+        height: Math.ceil(document.documentElement.scrollHeight)
+      }, '*');
+    }
+
+    function setupEmbedResizeSync() {
+      if (window.parent === window) {
+        return;
+      }
+
+      let frame = 0;
+      const schedulePost = () => {
+        if (frame) {
+          cancelAnimationFrame(frame);
+        }
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          postEmbedHeight();
+        });
+      };
+
+      const resizeObserver = new ResizeObserver(() => {
+        schedulePost();
+      });
+
+      resizeObserver.observe(document.body);
+      resizeObserver.observe(document.documentElement);
+
+      window.addEventListener('load', schedulePost);
+      window.addEventListener('resize', schedulePost);
+      setInterval(schedulePost, 1500);
+      schedulePost();
+    }
+
     function handleError(error) {
       setLog({ error: error instanceof Error ? error.message : String(error) });
       console.error(error);
@@ -882,6 +923,8 @@
 
       await loadSessions();
       updateSelectionControls();
+      setupEmbedResizeSync();
+      postEmbedHeight();
     }
 
     initialize().catch(handleError);
