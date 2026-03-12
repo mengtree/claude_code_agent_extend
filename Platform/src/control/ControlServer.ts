@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { PlatformRuntime } from '../runtime/PlatformRuntime.js';
 import { createLogger } from '../utils/Logger.js';
 import type { MessageEnvelope } from '../types.js';
@@ -22,6 +25,7 @@ export class ControlServer {
   private readonly startedAt = Date.now();
   private readonly logger;
   private readonly sseConnections = new Map<string, SSEConnection>();
+  private readonly staticDir: string;
 
   constructor(
     private readonly runtime: PlatformRuntime,
@@ -29,6 +33,10 @@ export class ControlServer {
     logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info'
   ) {
     this.logger = createLogger(logLevel);
+    // Set static files directory
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = join(__filename, '..');
+    this.staticDir = join(__dirname, '../../static');
   }
 
   async listen(port: number, host: string): Promise<void> {
@@ -61,6 +69,34 @@ export class ControlServer {
     const method = (request.method || 'GET').toUpperCase();
     const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
     const segments = url.pathname.split('/').filter(Boolean);
+
+    if (method === 'GET' && url.pathname === '/') {
+      this.handleDashboard(response);
+      return;
+    }
+
+    // API endpoint for dashboard data
+    if (method === 'GET' && url.pathname === '/api/dashboard') {
+      this.sendJson(response, 200, this.getDashboardData());
+      return;
+    }
+
+    // API endpoint for module details
+    if (method === 'GET' && segments[0] === 'api' && segments[1] === 'modules' && segments[2]) {
+      const moduleData = this.runtime.getRegistry().getModule(segments[2]);
+      if (moduleData) {
+        this.sendJson(response, 200, moduleData);
+      } else {
+        this.sendJson(response, 404, { error: 'Module not found' });
+      }
+      return;
+    }
+
+    // Serve static files
+    if (method === 'GET' && url.pathname.startsWith('/static/')) {
+      this.serveStaticFile(url.pathname, response);
+      return;
+    }
 
     if (method === 'GET' && url.pathname === '/health') {
       this.sendJson(response, 200, {
@@ -165,6 +201,97 @@ export class ControlServer {
     response.statusCode = statusCode;
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.end(`${JSON.stringify(data, null, 2)}\n`);
+  }
+
+  /**
+   * Handle dashboard page request
+   */
+  private handleDashboard(response: ServerResponse): void {
+    const dashboardPath = join(this.staticDir, 'index.html');
+    try {
+      const content = readFileSync(dashboardPath, 'utf-8');
+      response.statusCode = 200;
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end(content);
+    } catch (error) {
+      this.logger.error('[ControlServer] Failed to read dashboard file:', error);
+      this.sendJson(response, 500, { error: 'Dashboard not available' });
+    }
+  }
+
+  /**
+   * Serve static files
+   */
+  private serveStaticFile(pathname: string, response: ServerResponse): void {
+    // Remove /static/ prefix and ensure safety
+    const filePath = join(this.staticDir, pathname.replace(/^\/static\//, ''));
+    try {
+      const content = readFileSync(filePath);
+      const ext = filePath.split('.').pop();
+
+      const mimeTypes: Record<string, string> = {
+        'js': 'application/javascript',
+        'css': 'text/css',
+        'html': 'text/html',
+        'json': 'application/json',
+        'png': 'image/png',
+        'svg': 'image/svg+xml'
+      };
+
+      response.statusCode = 200;
+      response.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+      response.end(content);
+    } catch (error) {
+      this.logger.error(`[ControlServer] Failed to serve static file ${pathname}:`, error);
+      this.sendJson(response, 404, { error: 'File not found' });
+    }
+  }
+
+  /**
+   * Get dashboard data
+   */
+  private getDashboardData() {
+    const registry = this.runtime.getRegistry();
+    const supervisor = this.runtime.getSupervisor();
+    const messageBus = this.runtime.getMessageBus();
+
+    return {
+      ok: true,
+      version: this.version,
+      uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
+      runtime: this.runtime.getStatus(),
+      modules: registry.getAllModules().map(m => ({
+        moduleId: m.moduleId,
+        name: m.manifest.name,
+        version: m.manifest.version,
+        kind: m.manifest.kind,
+        status: m.status,
+        pid: m.pid,
+        description: m.manifest.description,
+        autoStart: m.manifest.startup?.autoStart || false,
+        daemon: m.manifest.startup?.daemon || false,
+        registeredAt: m.registeredAt,
+        startedAt: m.startedAt
+      })),
+      processes: supervisor.getAllProcesses().map(p => ({
+        moduleId: p.moduleId,
+        pid: p.process.pid,
+        restartCount: p.restartCount,
+        healthCheckFailures: p.healthCheckFailures,
+        startedAt: p.startedAt.toISOString(),
+        lastRestartAt: p.lastRestartAt?.toISOString(),
+        lastHealthCheckAt: p.lastHealthCheckAt?.toISOString()
+      })),
+      messages: {
+        count: messageBus.getAllHistory().length,
+        items: messageBus.getAllHistory().slice(-100) // Last 100 messages
+      },
+      subscribers: Array.from(this.sseConnections.values()).map(conn => ({
+        module: conn.module,
+        topics: conn.topics,
+        connectedAt: conn.connectedAt.toISOString()
+      }))
+    };
   }
 
   /**

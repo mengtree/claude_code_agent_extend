@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Platform Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <span>Platform</span>
+        </div>
+        <span class="version" id="platform-version">v0.1.0</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">概览</div>
+          <a href="#dashboard" class="nav-item active" data-page="dashboard">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>仪表板</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">模块管理</div>
+          <a href="#modules" class="nav-item" data-page="modules">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <span>所有模块</span>
+            <span class="nav-badge" id="nav-badge-modules">0</span>
+          </a>
+          <a href="#core" class="nav-item" data-page="core">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>核心模块</span>
+            <span class="nav-badge" id="nav-badge-core">0</span>
+          </a>
+          <a href="#adapters" class="nav-item" data-page="adapters">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+              <polyline points="16 6 12 2 8 6"></polyline>
+              <line x1="12" y1="2" x2="12" y2="15"></line>
+            </svg>
+            <span>适配器</span>
+            <span class="nav-badge" id="nav-badge-adapters">0</span>
+          </a>
+          <a href="#executors" class="nav-item" data-page="executors">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>执行器</span>
+            <span class="nav-badge" id="nav-badge-executors">0</span>
+          </a>
+          <a href="#managers" class="nav-item" data-page="managers">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span>管理器</span>
+            <span class="nav-badge" id="nav-badge-managers">0</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">监控</div>
+          <a href="#messages" class="nav-item" data-page="messages">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>消息历史</span>
+            <span class="nav-badge" id="nav-badge-messages">0</span>
+          </a>
+          <a href="#subscribers" class="nav-item" data-page="subscribers">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span>SSE 订阅</span>
+            <span class="nav-badge" id="nav-badge-subscribers">0</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">系统</div>
+          <a href="#settings" class="nav-item" data-page="settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>系统配置</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator" id="connection-status">
+          <span class="dot connecting"></span>
+          <span class="text">连接中...</span>
+        </div>
+        <div class="uptime" id="platform-uptime">运行时间: --</div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-left">
+          <h1 id="page-title">仪表板</h1>
+        </div>
+        <div class="header-right">
+          <button class="btn-refresh" id="btn-refresh" title="刷新数据">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <div class="page-content" id="page-content">
+        <!-- Dashboard Page -->
+        <div class="page active" id="page-dashboard">
+          <!-- Stats Cards -->
+          <section class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon modules">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value" id="stat-total-modules">0</div>
+                <div class="stat-label">总模块数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon running">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value" id="stat-running-modules">0</div>
+                <div class="stat-label">运行中</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon messages">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value" id="stat-total-messages">0</div>
+                <div class="stat-label">消息总数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon subscribers">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value" id="stat-subscribers">0</div>
+                <div class="stat-label">SSE 订阅</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Quick Actions -->
+          <section class="section">
+            <div class="section-header">
+              <h2>快速操作</h2>
+            </div>
+            <div class="quick-actions">
+              <button class="quick-action-btn" data-action="start-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>启动所有模块</span>
+              </button>
+              <button class="quick-action-btn" data-action="stop-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <span>停止所有模块</span>
+              </button>
+              <button class="quick-action-btn" data-action="restart-failed">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>重启失败模块</span>
+              </button>
+            </div>
+          </section>
+
+          <!-- Recent Activity -->
+          <section class="section">
+            <div class="section-header">
+              <h2>最近活动</h2>
+            </div>
+            <div class="activity-list" id="activity-list">
+              <div class="placeholder">暂无活动</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Modules Page -->
+        <div class="page" id="page-modules">
+          <section class="section">
+            <div class="section-header">
+              <h2>所有模块</h2>
+              <div class="filters">
+                <select id="filter-status" class="filter-select">
+                  <option value="">所有状态</option>
+                  <option value="running">运行中</option>
+                  <option value="stopped">已停止</option>
+                  <option value="failed">失败</option>
+                  <option value="unhealthy">不健康</option>
+                </select>
+                <select id="filter-kind" class="filter-select">
+                  <option value="">所有类型</option>
+                  <option value="core">核心</option>
+                  <option value="adapter">适配器</option>
+                  <option value="executor">执行器</option>
+                  <option value="manager">管理器</option>
+                </select>
+              </div>
+            </div>
+            <div class="modules-table-container">
+              <table class="modules-table">
+                <thead>
+                  <tr>
+                    <th>模块 ID</th>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>状态</th>
+                    <th>PID</th>
+                    <th>启动时间</th>
+                    <th>重启次数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="modules-table-body">
+                  <tr>
+                    <td colspan="8" class="loading">加载中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- Core Modules Page -->
+        <div class="page" id="page-core">
+          <section class="section">
+            <div class="section-header">
+              <h2>核心模块</h2>
+            </div>
+            <div class="modules-table-container">
+              <table class="modules-table">
+                <thead>
+                  <tr>
+                    <th>模块 ID</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>PID</th>
+                    <th>启动时间</th>
+                    <th>重启次数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="core-table-body">
+                  <tr>
+                    <td colspan="7" class="loading">加载中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- Adapters Page -->
+        <div class="page" id="page-adapters">
+          <section class="section">
+            <div class="section-header">
+              <h2>适配器</h2>
+            </div>
+            <div class="modules-table-container">
+              <table class="modules-table">
+                <thead>
+                  <tr>
+                    <th>模块 ID</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>PID</th>
+                    <th>启动时间</th>
+                    <th>重启次数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="adapters-table-body">
+                  <tr>
+                    <td colspan="7" class="loading">加载中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- Executors Page -->
+        <div class="page" id="page-executors">
+          <section class="section">
+            <div class="section-header">
+              <h2>执行器</h2>
+            </div>
+            <div class="modules-table-container">
+              <table class="modules-table">
+                <thead>
+                  <tr>
+                    <th>模块 ID</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>PID</th>
+                    <th>启动时间</th>
+                    <th>重启次数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="executors-table-body">
+                  <tr>
+                    <td colspan="7" class="loading">加载中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- Managers Page -->
+        <div class="page" id="page-managers">
+          <section class="section">
+            <div class="section-header">
+              <h2>管理器</h2>
+            </div>
+            <div class="modules-table-container">
+              <table class="modules-table">
+                <thead>
+                  <tr>
+                    <th>模块 ID</th>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>PID</th>
+                    <th>启动时间</th>
+                    <th>重启次数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="managers-table-body">
+                  <tr>
+                    <td colspan="7" class="loading">加载中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- Messages Page -->
+        <div class="page" id="page-messages">
+          <section class="section messages-section-full">
+            <div class="section-header">
+              <h2>消息历史</h2>
+              <div class="toggle-group">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="auto-scroll-messages" checked>
+                  <span class="slider"></span>
+                </label>
+                <span class="toggle-label">自动滚动</span>
+              </div>
+            </div>
+            <div class="messages-container" id="messages-container">
+              <div class="message-placeholder">暂无消息</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Subscribers Page -->
+        <div class="page" id="page-subscribers">
+          <section class="section">
+            <div class="section-header">
+              <h2>SSE 订阅者</h2>
+            </div>
+            <div class="subscribers-list" id="subscribers-list">
+              <div class="placeholder">暂无订阅者</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Settings Page -->
+        <div class="page" id="page-settings">
+          <section class="section">
+            <div class="section-header">
+              <h2>系统配置</h2>
+            </div>
+            <div class="settings-content">
+              <div class="setting-group">
+                <h3>平台信息</h3>
+                <div class="setting-item">
+                  <span class="setting-label">版本</span>
+                  <span class="setting-value" id="setting-version">v0.1.0</span>
+                </div>
+                <div class="setting-item">
+                  <span class="setting-label">运行时间</span>
+                  <span class="setting-value" id="setting-uptime">--</span>
+                </div>
+              </div>
+              <div class="setting-group">
+                <h3>模块统计</h3>
+                <div class="setting-item">
+                  <span class="setting-label">总模块数</span>
+                  <span class="setting-value" id="setting-total-modules">0</span>
+                </div>
+                <div class="setting-item">
+                  <span class="setting-label">运行中</span>
+                  <span class="setting-value" id="setting-running-modules">0</span>
+                </div>
+              </div>
+              <div class="setting-group">
+                <h3>消息统计</h3>
+                <div class="setting-item">
+                  <span class="setting-label">消息总数</span>
+                  <span class="setting-value" id="setting-total-messages">0</span>
+                </div>
+                <div class="setting-item">
+                  <span class="setting-label">SSE 订阅</span>
+                  <span class="setting-value" id="setting-subscribers">0</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Module Detail Modal -->
+  <div class="modal" id="module-modal">
+    <div class="modal-overlay" id="modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">模块详情</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Module details will be rendered here -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
