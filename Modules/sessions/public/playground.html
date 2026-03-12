@@ -32,12 +32,13 @@
     }
 
     .shell {
-      max-width: 1400px;
+      max-width: 1600px;
       margin: 0 auto;
-      padding: 20px 16px 24px;
+      padding: 20px 20px 24px;
       height: 100vh;
       display: flex;
       flex-direction: column;
+      width: 100%;
     }
 
     .hero {
@@ -74,7 +75,7 @@
 
     .layout {
       display: grid;
-      grid-template-columns: 320px minmax(0, 1fr);
+      grid-template-columns: 320px minmax(400px, 1fr);
       gap: 16px;
       flex: 1;
       min-height: 0;
@@ -408,8 +409,16 @@
       .hero { flex-direction: column; align-items: flex-start; }
       .chat-grid { min-height: 500px; }
       .meta-grid { grid-template-columns: 1fr; }
-      .shell { height: auto; min-height: 100vh; }
+      .shell { height: auto; min-height: 100vh; padding: 16px; }
       .panel { min-height: 400px; }
+    }
+
+    @media (min-width: 1400px) {
+      .shell { padding: 20px 8px 24px; }
+    }
+
+    @media (min-width: 1600px) {
+      .shell { padding: 20px 0 24px; }
     }
   </style>
 </head>
