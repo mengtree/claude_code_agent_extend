@@ -1,0 +1,11 @@
+{
+  "port": 3015,
+  "host": "127.0.0.1",
+  "logLevel": "info",
+  "dataDir": "./runtime/data",
+  "messageBusURL": "http://localhost:3200",
+  "scanIntervalMs": 1000,
+  "claimTimeoutMs": 300000,
+  "panelPort": 0,
+  "panelHost": "127.0.0.1"
+}

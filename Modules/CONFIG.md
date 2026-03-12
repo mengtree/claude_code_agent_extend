@@ -66,6 +66,30 @@ export SESSIONS_MESSAGE_BUS_URL=http://localhost:3000
 export SESSIONS_PLATFORM_CORE_URL=http://127.0.0.1:3000
 ```
 
+### schedule 模块
+
+**文件**: `Modules/schedule/config.json`
+
+```json
+{
+  "port": 3014,
+  "host": "127.0.0.1",
+  "panelPort": 0,
+  "panelHost": "127.0.0.1",
+  "messageBusURL": "http://localhost:3200",
+  "scanIntervalMs": 1000,
+  "claimTimeoutMs": 300000,
+  "logLevel": "info"
+}
+```
+
+**环境变量**:
+```bash
+export SCHEDULE_PORT=3014
+export SCHEDULE_PANEL_PORT=0
+export MESSAGE_BUS_URL=http://localhost:3200
+```
+
 ## 完整启动示例
 
 ### 1. 启动 Platform 消息总线
@@ -105,6 +129,21 @@ npm start
 # 模块将在 http://localhost:3010 运行
 ```
 
+### 4. 启动 schedule 模块
+
+```bash
+cd Modules/schedule
+
+# 方式 1: 使用环境变量
+MESSAGE_BUS_URL=http://localhost:3200 npm start
+
+# 方式 2: 使用配置文件
+npm start
+
+# API 将在 http://localhost:3014 运行
+# 集成面板端口默认随机分配，并自动注册到 Platform Dashboard
+```
+
 ## 配置优先级
 
 配置加载优先级（从高到低）：
@@ -122,6 +161,8 @@ npm start
 | `PLATFORM_CORE_HOST` | platform-core 地址 | `127.0.0.1` |
 | `SESSIONS_PORT` | sessions 模块端口 | `3010` |
 | `SESSIONS_HOST` | sessions 模块地址 | `127.0.0.1` |
+| `SCHEDULE_PORT` | schedule 模块 API 端口 | `3014` |
+| `SCHEDULE_PANEL_PORT` | schedule 面板端口，`0` 为随机 | `0` |
 
 ## 验证配置
 

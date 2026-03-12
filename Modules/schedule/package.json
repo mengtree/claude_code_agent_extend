@@ -1,0 +1,33 @@
+{
+  "name": "@agent-platform/schedule",
+  "version": "0.1.0",
+  "description": "Schedule Module - 周期与延迟任务管理",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "clean": "node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('runtime/tmp',{recursive:true,force:true});\""
+  },
+  "keywords": [
+    "agent-platform",
+    "schedule",
+    "cron",
+    "delay"
+  ],
+  "author": "Agent Platform Team",
+  "license": "MIT",
+  "dependencies": {
+    "@agent-platform/module-integration-helper": "file:../shared/module-integration-helper",
+    "@agent-platform/module-message-bus-client": "file:../shared/module-message-bus-client",
+    "cron-parser": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

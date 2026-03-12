@@ -1,0 +1,166 @@
+{
+  "moduleId": "schedule",
+  "name": "Schedule Module",
+  "version": "0.1.0",
+  "description": "定时任务模块 - 支持延迟任务、周期任务与集成面板",
+  "kind": "manager",
+  "entry": {
+    "command": "node",
+    "args": ["dist/index.js"]
+  },
+  "startup": {
+    "autoStart": true,
+    "daemon": true,
+    "restartPolicy": "on-failure"
+  },
+  "healthCheck": {
+    "type": "http",
+    "path": "/health",
+    "intervalMs": 15000,
+    "timeoutMs": 3000,
+    "unhealthyThreshold": 3
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "number",
+        "description": "API 服务端口",
+        "default": 3015
+      },
+      "host": {
+        "type": "string",
+        "description": "API 服务监听地址",
+        "default": "127.0.0.1"
+      },
+      "panelPort": {
+        "type": "number",
+        "description": "集成面板端口，0 表示随机可用端口",
+        "default": 0
+      },
+      "panelHost": {
+        "type": "string",
+        "description": "集成面板监听地址",
+        "default": "127.0.0.1"
+      },
+      "messageBusURL": {
+        "type": "string",
+        "description": "Platform 消息总线地址"
+      },
+      "scanIntervalMs": {
+        "type": "number",
+        "description": "定时任务扫描间隔毫秒",
+        "default": 1000
+      },
+      "claimTimeoutMs": {
+        "type": "number",
+        "description": "任务 claim 超时时间毫秒",
+        "default": 300000
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "action": "create_schedule",
+      "description": "创建定时任务",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "message": { "type": "string" },
+          "sourceType": { "type": "string", "enum": ["delay", "cron"] },
+          "delayMs": { "type": "number" },
+          "cronExpression": { "type": "string" },
+          "timezone": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "claudeSessionId": { "type": "string" },
+          "workingDirectory": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "model": { "type": "string" }
+        },
+        "required": ["message", "sourceType"]
+      },
+      "responseSchema": {
+        "type": "object"
+      },
+      "timeoutMs": 5000,
+      "idempotent": false
+    },
+    {
+      "action": "list_schedules",
+      "description": "列出定时任务",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "sourceType": { "type": "string" }
+        }
+      },
+      "responseSchema": {
+        "type": "array"
+      },
+      "timeoutMs": 3000,
+      "idempotent": true
+    },
+    {
+      "action": "get_schedule",
+      "description": "获取定时任务详情",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "scheduleId": { "type": "string" }
+        },
+        "required": ["scheduleId"]
+      },
+      "responseSchema": {
+        "type": "object"
+      },
+      "timeoutMs": 3000,
+      "idempotent": true
+    },
+    {
+      "action": "update_schedule",
+      "description": "更新定时任务",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "scheduleId": { "type": "string" },
+          "title": { "type": "string" },
+          "message": { "type": "string" },
+          "sourceType": { "type": "string", "enum": ["delay", "cron"] },
+          "delayMs": { "type": "number" },
+          "cronExpression": { "type": "string" },
+          "timezone": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "paused", "completed", "failed"] },
+          "sessionId": { "type": "string" },
+          "claudeSessionId": { "type": "string" },
+          "workingDirectory": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "model": { "type": "string" }
+        },
+        "required": ["scheduleId"]
+      },
+      "responseSchema": {
+        "type": "object"
+      },
+      "timeoutMs": 5000,
+      "idempotent": false
+    },
+    {
+      "action": "delete_schedule",
+      "description": "删除定时任务",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "scheduleId": { "type": "string" }
+        },
+        "required": ["scheduleId"]
+      },
+      "responseSchema": {
+        "type": "object"
+      },
+      "timeoutMs": 5000,
+      "idempotent": true
+    }
+  ]
+}
