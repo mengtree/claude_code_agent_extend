@@ -6,6 +6,7 @@
 
 import type { Options as ClaudeSdkOptions, Query as ClaudeSdkQuery, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type {
   ClaudeQueryRequest,
@@ -25,6 +26,11 @@ const dynamicImport = new Function(
 ) as (specifier: string) => Promise<ClaudeSdkModule>;
 
 const defaultWorkingDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+const skillsPromptHeader = [
+  '你正在 AgentExtend 工作区中执行任务。',
+  '在需要了解模块能力、模块接入规范或模块用途时，优先扫描工作区 Modules 目录下各模块的 skills 文件夹。'
+].join('\n');
 
 /**
  * 流式查询回调函数类型
@@ -201,13 +207,14 @@ export class ClaudeSdkService {
     request: ClaudeQueryRequest,
     abortController: AbortController
   ): ClaudeSdkOptions {
+    const workingDirectory = request.workingDirectory || defaultWorkingDirectory;
     const options: ClaudeSdkOptions = {
       abortController,
-      cwd: request.workingDirectory || defaultWorkingDirectory,
+      cwd: workingDirectory,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       persistSession: true,
-      systemPrompt: request.systemPrompt,
+      systemPrompt: this.buildSystemPrompt(request.systemPrompt, workingDirectory),
       model: request.model
     };
 
@@ -225,6 +232,103 @@ export class ClaudeSdkService {
     }
 
     return options;
+  }
+
+  /**
+   * 构建系统提示词
+   */
+  private buildSystemPrompt(systemPrompt: string | undefined, workingDirectory: string): string {
+    const workspaceRoot = this.resolveWorkspaceRoot(workingDirectory);
+    const moduleSkillsPattern = resolve(workspaceRoot, 'Modules', '*', 'skills', '*', 'SKILL.md');
+    const discoveredSkillPaths = this.collectSkillDocumentPaths(workspaceRoot);
+
+    const autoPromptLines = [
+      skillsPromptHeader,
+      `当前工作目录: ${workingDirectory}`,
+      `工作区根目录: ${workspaceRoot}`,
+      `模块 skill 扫描模式: ${moduleSkillsPattern}`,
+      '优先读取各模块 skills 目录下的 SKILL.md 作为模块能力说明入口。'
+    ];
+
+    if (discoveredSkillPaths.length > 0) {
+      autoPromptLines.push('当前已发现的 skill 文档路径:');
+      autoPromptLines.push(...discoveredSkillPaths.map((skillPath) => `- ${skillPath}`));
+    }
+
+    const autoPrompt = autoPromptLines.join('\n');
+
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      return autoPrompt;
+    }
+
+    return `${systemPrompt.trim()}\n\n${autoPrompt}`;
+  }
+
+  /**
+   * 根据工作目录推断工作区根目录
+   */
+  private resolveWorkspaceRoot(workingDirectory: string): string {
+    const normalized = workingDirectory.replace(/\\/g, '/');
+    const modulesSegment = '/Modules/';
+    const modulesIndex = normalized.lastIndexOf(modulesSegment);
+
+    if (modulesIndex >= 0) {
+      return workingDirectory.slice(0, modulesIndex);
+    }
+
+    if (existsSync(resolve(workingDirectory, 'Modules'))) {
+      return workingDirectory;
+    }
+
+    return workingDirectory;
+  }
+
+  /**
+   * 收集工作区下所有 skill 主文档路径
+   */
+  private collectSkillDocumentPaths(workspaceRoot: string): string[] {
+    const modulesDir = resolve(workspaceRoot, 'Modules');
+    if (!existsSync(modulesDir)) {
+      return [];
+    }
+
+    const moduleEntries = readdirSync(modulesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+
+    const skillPaths: string[] = [];
+
+    for (const moduleName of moduleEntries) {
+      const skillsDir = resolve(modulesDir, moduleName, 'skills');
+      if (!existsSync(skillsDir)) {
+        continue;
+      }
+
+      const skillEntries = readdirSync(skillsDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((left, right) => left.localeCompare(right));
+
+      for (const skillEntry of skillEntries) {
+        const skillDocumentPath = resolve(skillsDir, skillEntry, 'SKILL.md');
+        if (!existsSync(skillDocumentPath)) {
+          continue;
+        }
+
+        try {
+          if (!statSync(skillDocumentPath).isFile()) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
+        skillPaths.push(skillDocumentPath);
+      }
+    }
+
+    return skillPaths;
   }
 
   /**
