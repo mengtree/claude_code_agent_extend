@@ -72,9 +72,20 @@
         "type": "object",
         "properties": {
           "prompt": { "type": "string" },
-          "sessionId": { "type": "string" },
+          "sessionId": {
+            "type": "string",
+            "description": "业务会话 ID，仅用于业务侧关联"
+          },
+          "claudeSessionId": {
+            "type": "string",
+            "description": "Claude 会话 ID，用于恢复 Claude 多轮对话"
+          },
           "systemPrompt": { "type": "string" },
           "model": { "type": "string" },
+          "workingDirectory": {
+            "type": "string",
+            "description": "Claude 执行时使用的工作目录"
+          },
           "stream": { "type": "boolean", "default": true }
         },
         "required": ["prompt"]
@@ -85,6 +96,7 @@
           "ok": { "type": "boolean" },
           "result": { "type": "string" },
           "sessionId": { "type": "string" },
+          "claudeSessionId": { "type": "string" },
           "durationMs": { "type": "number" },
           "costUsd": { "type": "number" }
         }
@@ -99,15 +111,62 @@
         "type": "object",
         "properties": {
           "prompt": { "type": "string" },
-          "sessionId": { "type": "string" },
+          "sessionId": {
+            "type": "string",
+            "description": "业务会话 ID，仅用于业务侧关联"
+          },
+          "claudeSessionId": {
+            "type": "string",
+            "description": "Claude 会话 ID，用于恢复 Claude 多轮对话"
+          },
           "systemPrompt": { "type": "string" },
-          "model": { "type": "string" }
+          "model": { "type": "string" },
+          "workingDirectory": {
+            "type": "string",
+            "description": "Claude 执行时使用的工作目录"
+          }
         },
         "required": ["prompt"]
       },
       "responseSchema": {
         "type": "object",
         "description": "通过 SSE 流式返回事件"
+      },
+      "timeoutMs": 120000,
+      "idempotent": false
+    },
+    {
+      "action": "submit_user_message",
+      "description": "处理来自消息总线的用户消息并返回 reply envelope",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "model": { "type": "string" },
+          "timeoutMs": { "type": "number" },
+          "claudeSessionId": {
+            "type": "string",
+            "description": "Claude 会话 ID，用于恢复 Claude 多轮对话"
+          },
+          "workingDirectory": {
+            "type": "string",
+            "description": "Claude 执行时使用的工作目录"
+          }
+        },
+        "required": ["message"]
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "response": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "claudeSessionId": { "type": "string" },
+          "durationMs": { "type": "number" },
+          "costUsd": { "type": "number" },
+          "stopReason": { "type": "string" }
+        }
       },
       "timeoutMs": 120000,
       "idempotent": false

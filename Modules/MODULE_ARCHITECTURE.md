@@ -356,7 +356,7 @@ callbackTopic：异步结果通知通道。
 
 timeoutMs：超时时间。
 
-context：上下文信息，例如 sessionId、conversationId、userId、originRequestId。
+context：上下文信息，例如 sessionId、claudeSessionId、conversationId、userId、originRequestId。其中 sessionId 用于业务链路关联，claudeSessionId 才用于恢复 Claude 多轮对话。
 
 createdAt：消息创建时间。
 

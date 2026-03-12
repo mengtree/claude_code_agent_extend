@@ -38,11 +38,13 @@
 ```typescript
 {
   prompt: string;          // 必填，用户提示词
-  sessionId?: string;      // 可选，会话 ID，用于多轮对话
+  sessionId?: string;      // 可选，业务会话 ID，用于业务侧关联
+  claudeSessionId?: string; // 可选，Claude 会话 ID，用于恢复 Claude 多轮对话
   systemPrompt?: string;   // 可选，系统提示词
   model?: string;          // 可选，指定模型
   timeoutMs?: number;      // 可选，超时时间（毫秒）
   jsonSchema?: object;     // 可选，JSON Schema 用于结构化输出
+  workingDirectory?: string; // 可选，Claude 执行时的工作目录
 }
 ```
 
@@ -70,7 +72,20 @@ curl -X POST http://localhost:3000/query \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "解释什么是机器学习",
-    "systemPrompt": "你是一个专业的AI助手"
+    "systemPrompt": "你是一个专业的AI助手",
+    "workingDirectory": "D:/VSProject/AgentExtend"
+  }'
+```
+
+恢复 Claude 多轮对话时，应传入 `claudeSessionId`：
+
+```bash
+curl -X POST http://localhost:3000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "继续刚才的话题",
+    "sessionId": "local-session-001",
+    "claudeSessionId": "claude-session-001"
   }'
 ```
 
@@ -295,11 +310,14 @@ curl -X POST http://localhost:3000/sessions \
   timeoutMs: number;
   context: {
     sessionId: string;
+    claudeSessionId?: string;
     userId?: string;
   };
   createdAt: string;
 }
 ```
+
+如果是 `submit_user_message` 这类 Claude 查询动作，业务模块应保存并回传 `claudeSessionId`；不要把本地 `sessionId` 当成 Claude SDK 的恢复参数。
 
 ### 被其他模块调用
 
@@ -335,7 +353,7 @@ curl http://localhost:3000/health
 
 ## 最佳实践
 
-1. **使用会话管理**: 对于多轮对话，始终使用 `sessionId` 来维持上下文
+1. **区分两类会话 ID**: `sessionId` 用于业务链路关联，`claudeSessionId` 用于恢复 Claude 多轮对话
 2. **合理设置超时**: 根据任务复杂度设置合适的 `timeoutMs`
 3. **错误处理**: 始终检查响应中的 `ok` 字段
 4. **流式传输**: 对于长时间运行的任务，使用 `stream_query` 获取实时反馈

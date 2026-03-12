@@ -77,6 +77,12 @@ curl http://localhost:3000/health
 
 ## API 使用
 
+说明：
+
+- `sessionId` 表示业务侧本地会话 ID，用于模块间上下文关联。
+- `claudeSessionId` 表示 Claude SDK 返回的会话 ID，只有它才用于恢复 Claude 多轮对话。
+- `workingDirectory` 可选，用于指定 Claude 执行时看到的工作目录；未传时默认使用模块根目录。
+
 ### 1. 执行查询（非流式）
 
 ```bash
@@ -84,7 +90,20 @@ curl -X POST http://localhost:3000/query \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "解释什么是机器学习",
-    "systemPrompt": "你是一个专业的AI助手"
+    "systemPrompt": "你是一个专业的AI助手",
+    "workingDirectory": "D:/VSProject/AgentExtend"
+  }'
+```
+
+继续 Claude 多轮对话时，传入 `claudeSessionId`，不要把业务 `sessionId` 用作恢复参数：
+
+```bash
+curl -X POST http://localhost:3000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "继续刚才的话题",
+    "sessionId": "local-session-001",
+    "claudeSessionId": "claude-session-001"
   }'
 ```
 
@@ -132,17 +151,26 @@ curl -X POST http://localhost:3000/messages \
     "toModule": "platform-core",
     "action": "submit_user_message",
     "payload": {
-      "message": "请回复 OK"
+      "message": "请回复 OK",
+      "claudeSessionId": "claude-session-001",
+      "workingDirectory": "D:/VSProject/AgentExtend"
     },
     "replyTo": "sessions",
     "timeoutMs": 30000,
     "context": {
-      "sessionId": "session-001"
+      "sessionId": "local-session-001",
+      "claudeSessionId": "claude-session-001"
     }
   }'
 ```
 
 返回统一的 reply envelope，供调用模块继续处理。
+
+约定：
+
+- 首轮总线消息可以只传 `context.sessionId`。
+- 如果需要恢复 Claude 上下文，必须在 `payload.claudeSessionId` 或 `context.claudeSessionId` 中传入 Claude 会话 ID。
+- `context.sessionId` 不能直接当成 Claude SDK 的 `resume` 参数。
 
 ## 目录结构
 

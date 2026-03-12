@@ -238,13 +238,16 @@ permissions：模块运行权限边界。
   "payload": {
     "message": "明天下午三点提醒我交周报",
     "source": "browser-im",
-    "conversationId": "conv-001"
+    "conversationId": "conv-001",
+    "claudeSessionId": "claude-session-001",
+    "workingDirectory": "D:/VSProject/AgentExtend"
   },
   "replyTo": "im",
   "callbackTopic": "module.im.reply",
   "timeoutMs": 30000,
   "context": {
     "sessionId": "session-001",
+    "claudeSessionId": "claude-session-001",
     "userId": "user-001",
     "originRequestId": "req-001"
   },
@@ -262,13 +265,13 @@ fromModule 和 toModule：用于明确责任边界。
 
 action：能力动作名，必须与 capability 一致。
 
-payload：动作输入。
+payload：动作输入。恢复 Claude 多轮对话时，应把 `claudeSessionId` 放在 payload 或 context 中。
 
 replyTo：结果应回给哪个模块。
 
 callbackTopic：异步回调主题。
 
-context：公共上下文，建议至少支持 sessionId、conversationId、userId。
+context：公共上下文，建议至少支持 sessionId、claudeSessionId、conversationId、userId。`sessionId` 是业务会话 ID，不等于 Claude 会话 ID。
 
 ## 7. 回调约定
 
