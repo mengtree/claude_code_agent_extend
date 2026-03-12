@@ -5,5 +5,10 @@
   "dataDir": "./runtime/data",
   "sessionTimeoutDays": 30,
   "platformCoreUrl": "http://127.0.0.1:3001",
-  "messageBusURL": "http://localhost:3200"
+  "messageBusURL": "http://localhost:3200",
+  "asyncMessage": {
+    "maxConcurrentTasks": 10,
+    "taskTimeoutMs": 300000,
+    "maxRetries": 2
+  }
 }

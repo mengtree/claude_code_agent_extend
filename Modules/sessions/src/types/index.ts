@@ -133,6 +133,11 @@ export interface MessageResponse {
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 /**
+ * 消息处理状态
+ */
+export type MessageStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+/**
  * 会话消息
  */
 export interface SessionMessage {
@@ -146,6 +151,12 @@ export interface SessionMessage {
   content: string;
   /** 创建时间 */
   createdAt: string;
+  /** 消息处理状态（异步模式） */
+  status?: MessageStatus;
+  /** 错误信息（处理失败时） */
+  error?: string;
+  /** 完成时间 */
+  completedAt?: string;
 }
 
 /**
@@ -154,10 +165,14 @@ export interface SessionMessage {
 export interface SendSessionMessageRequest {
   /** 消息内容 */
   message: string;
+  /** 是否异步处理 */
+  async?: boolean;
+  /** 回调主题（异步模式下） */
+  callbackTopic?: string;
 }
 
 /**
- * 发送会话消息响应
+ * 发送会话消息响应（同步模式）
  */
 export interface SendSessionMessageResponse {
   /** 会话 ID */
@@ -168,6 +183,40 @@ export interface SendSessionMessageResponse {
   reply: SessionMessage;
   /** 当前会话全部消息 */
   messages: SessionMessage[];
+}
+
+/**
+ * 异步消息提交响应
+ */
+export interface AsyncMessageSubmitResponse {
+  /** 会话 ID */
+  sessionId: string;
+  /** 消息 ID */
+  messageId: string;
+  /** 消息状态 */
+  status: MessageStatus;
+  /** 消息 */
+  message: SessionMessage;
+  /** 结果回调主题 */
+  resultTopic: string;
+}
+
+/**
+ * 异步消息结果通知
+ */
+export interface AsyncMessageResult {
+  /** 会话 ID */
+  sessionId: string;
+  /** 消息 ID */
+  messageId: string;
+  /** 用户消息 */
+  userMessage: SessionMessage;
+  /** 助手回复 */
+  reply: SessionMessage;
+  /** 是否成功 */
+  ok: boolean;
+  /** 错误信息 */
+  error?: string;
 }
 
 /**
@@ -204,6 +253,15 @@ export interface SessionsConfig {
   platformCoreUrl: string;
   /** Platform 消息总线地址 */
   messageBusURL?: string;
+  /** 异步消息配置 */
+  asyncMessage?: {
+    /** 最大并发任务数 */
+    maxConcurrentTasks?: number;
+    /** 任务超时时间（毫秒） */
+    taskTimeoutMs?: number;
+    /** 失败重试次数 */
+    maxRetries?: number;
+  };
 }
 
 /**

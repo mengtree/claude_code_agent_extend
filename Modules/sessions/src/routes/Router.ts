@@ -5,6 +5,9 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createReadStream, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { SessionController } from '../controllers/SessionController.js';
 import type { HealthController } from '../controllers/HealthController.js';
 import type { MessageController } from '../controllers/MessageController.js';
@@ -32,6 +35,7 @@ export class Router {
   private readonly messageController: MessageController;
   private readonly playgroundController: PlaygroundController;
   private readonly sessionModel: SessionModel;
+  private readonly publicDir: string;
   private server: Server | null = null;
 
   constructor(options: RouterOptions) {
@@ -40,6 +44,10 @@ export class Router {
     this.messageController = options.messageController;
     this.playgroundController = options.playgroundController;
     this.sessionModel = options.sessionModel;
+
+    // 获取静态文件目录 - 指向模块根目录的 public 文件夹
+    const __dirname = fileURLToPath(new URL('.', import.meta.url));
+    this.publicDir = join(__dirname, '../public');
   }
 
   /**
@@ -110,7 +118,13 @@ export class Router {
     try {
       // 路由分发
       if ((path === '/' || path === '/playground') && method === 'GET') {
-        this.playgroundController.handlePage(response);
+        await this.playgroundController.handlePage(response);
+        return;
+      }
+
+      // 静态文件服务 (GET /public/*)
+      if (path.startsWith('/public/') && method === 'GET') {
+        this.serveStatic(path, response);
         return;
       }
 
@@ -165,6 +179,7 @@ export class Router {
   ): Promise<void> {
     const isSessionDetailRoute = /^\/sessions\/[^/]+$/.test(path);
     const isSessionMessagesRoute = /^\/sessions\/[^/]+\/messages$/.test(path);
+    const isSessionEventsRoute = /^\/sessions\/[^/]+\/events$/.test(path);
 
     // POST /sessions - 创建会话
     if (path === '/sessions' && method === 'POST') {
@@ -187,6 +202,12 @@ export class Router {
     // POST /sessions/:sessionId/messages - 发送消息
     if (isSessionMessagesRoute && method === 'POST') {
       await this.sessionController.handleSendMessage(request, response);
+      return;
+    }
+
+    // GET /sessions/:sessionId/events - SSE 事件流
+    if (isSessionEventsRoute && method === 'GET') {
+      this.sessionController.handleSSEConnection(request, response);
       return;
     }
 
@@ -251,6 +272,53 @@ export class Router {
     response.statusCode = statusCode;
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.end(`${JSON.stringify(data, null, 2)}\n`);
+  }
+
+  /**
+   * 提供静态文件服务
+   */
+  private serveStatic(path: string, response: ServerResponse): void {
+    const filePath = join(this.publicDir, path.replace('/public/', ''));
+
+    if (!existsSync(filePath)) {
+      this.sendJson(response, 404, { error: 'File not found', ok: false });
+      return;
+    }
+
+    // 根据扩展名设置 Content-Type
+    const ext = filePath.split('.').pop();
+    const contentTypes: Record<string, string> = {
+      html: 'text/html; charset=utf-8',
+      css: 'text/css; charset=utf-8',
+      js: 'application/javascript; charset=utf-8',
+      json: 'application/json; charset=utf-8',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      svg: 'image/svg+xml',
+      ico: 'image/x-icon',
+     woff: 'font/woff',
+      woff2: 'font/woff2',
+      ttf: 'font/ttf',
+      eot: 'application/vnd.ms-fontobject'
+    };
+
+    const contentType = contentTypes[ext || ''] || 'application/octet-stream';
+
+    // 创建文件流并响应
+    const stream = createReadStream(filePath);
+    stream.on('open', () => {
+      response.setHeader('Content-Type', contentType);
+      stream.pipe(response);
+    });
+
+    stream.on('error', (err) => {
+      console.error('Static file error:', err);
+      if (!response.headersSent) {
+        this.sendJson(response, 500, { error: 'Internal server error', ok: false });
+      }
+    });
   }
 }
 

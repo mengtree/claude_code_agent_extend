@@ -19,6 +19,8 @@ import { HealthController } from './controllers/HealthController.js';
 import { MessageController } from './controllers/MessageController.js';
 import { PlaygroundController } from './controllers/PlaygroundController.js';
 import { PlatformCoreMessageClient } from './services/PlatformCoreMessageClient.js';
+import { AsyncMessageService } from './services/AsyncMessageService.js';
+import { SSEManager } from './services/SSEManager.js';
 import { createRouter } from './routes/Router.js';
 import { createLogger } from './utils/Logger.js';
 import { getConfig } from './utils/Config.js';
@@ -36,6 +38,8 @@ export class SessionsApp {
   private readonly messageController: MessageController;
   private readonly playgroundController: PlaygroundController;
   private readonly platformCoreClient: PlatformCoreMessageClient;
+  private readonly asyncMessageService: AsyncMessageService;
+  private readonly sseManager: SSEManager;
   private readonly router: ReturnType<typeof createRouter>;
 
   constructor(config: SessionsConfig) {
@@ -51,8 +55,28 @@ export class SessionsApp {
     this.sessionModel = new SessionModel({ dataDir });
     this.platformCoreClient = new PlatformCoreMessageClient(this.config.platformCoreUrl);
 
+    // 初始化异步消息服务
+    this.asyncMessageService = new AsyncMessageService(
+      this.sessionModel,
+      this.platformCoreClient,
+      (this.config as any).asyncMessage || {
+        maxConcurrentTasks: 10,
+        taskTimeoutMs: 300000, // 5 分钟
+        maxRetries: 2
+      }
+    );
+
+    // 初始化 SSE 管理器
+    this.sseManager = new SSEManager();
+    this.asyncMessageService.setSSEManager(this.sseManager);
+
     // 初始化控制器
-    this.sessionController = new SessionController(this.sessionModel, this.platformCoreClient);
+    this.sessionController = new SessionController(
+      this.sessionModel,
+      this.platformCoreClient,
+      this.asyncMessageService,
+      this.sseManager
+    );
     this.healthController = HealthController ? new HealthController('0.1.0') : null as any;
 
     // 初始化消息控制器（连接到 Platform 消息总线）
@@ -211,6 +235,15 @@ export class SessionsApp {
 
     // 停止 HTTP 服务器
     await this.router.close();
+
+    // 关闭异步消息服务
+    this.asyncMessageService.shutdown();
+
+    // 关闭 SSE 管理器
+    this.sseManager.shutdown();
+
+    // 关闭消息控制器
+    this.messageController.shutdown();
 
     this.logger.info('Sessions Module stopped');
   }

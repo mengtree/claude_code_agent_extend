@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sessions Playground</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: rgba(255, 251, 245, 0.9);
+      --panel-strong: #fffdf8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: rgba(31, 41, 55, 0.12);
+      --accent: #c4552d;
+      --accent-strong: #8f2d14;
+      --user: #1d4ed8;
+      --assistant: #0f766e;
+      --shadow: 0 20px 50px rgba(111, 79, 40, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(196, 85, 45, 0.18), transparent 32%),
+        radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 28%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 16px 24px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 16px;
+      flex-shrink: 0;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 16px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-inner {
+      padding: 16px;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      font-size: 13px;
+      color: var(--ink);
+      outline: none;
+      transition: border-color 140ms ease, transform 140ms ease;
+    }
+
+    input:focus, textarea:focus {
+      border-color: rgba(196, 85, 45, 0.65);
+      transform: translateY(-1px);
+    }
+
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 14px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      cursor: pointer;
+      transition: transform 160ms ease, opacity 160ms ease;
+    }
+
+    button.secondary {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+    }
+
+    button.warn {
+      background: linear-gradient(135deg, #b42318, #7a271a);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+
+    /* 会话列表 - 添加滚动 */
+    .sessions-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      border-top: 1px solid var(--line);
+    }
+
+    .sessions {
+      height: 100%;
+      overflow-y: auto;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    /* 自定义滚动条 */
+    .sessions::-webkit-scrollbar,
+    .messages::-webkit-scrollbar,
+    .log::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .sessions::-webkit-scrollbar-track,
+    .messages::-webkit-scrollbar-track,
+    .log::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sessions::-webkit-scrollbar-thumb,
+    .messages::-webkit-scrollbar-thumb,
+    .log::-webkit-scrollbar-thumb {
+      background: rgba(31, 41, 55, 0.15);
+      border-radius: 3px;
+    }
+
+    .sessions::-webkit-scrollbar-thumb:hover,
+    .messages::-webkit-scrollbar-thumb:hover,
+    .log::-webkit-scrollbar-thumb:hover {
+      background: rgba(31, 41, 55, 0.25);
+    }
+
+    .session-card {
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid transparent;
+      color: var(--ink);
+      cursor: pointer;
+      transition: border-color 160ms ease, transform 160ms ease;
+      font-size: 12px;
+    }
+
+    .session-card:hover,
+    .session-card.active {
+      border-color: rgba(196, 85, 45, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .session-card strong {
+      display: block;
+      word-break: break-word;
+      margin-bottom: 4px;
+    }
+
+    .session-meta {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    /* 对话区域布局 */
+    .chat-grid {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .chat-head {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .meta-grid > div {
+      font-size: 12px;
+    }
+
+    .meta-grid strong {
+      display: block;
+      color: var(--ink);
+    }
+
+    .meta-grid .status-line {
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    /* 消息列表 - 添加滚动 */
+    .messages-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0)),
+        repeating-linear-gradient(180deg, transparent, transparent 31px, rgba(31, 41, 55, 0.03) 32px);
+    }
+
+    .messages {
+      height: 100%;
+      overflow-y: auto;
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .empty {
+      border: 1px dashed rgba(31, 41, 55, 0.18);
+      border-radius: 16px;
+      padding: 20px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+    }
+
+    .message {
+      max-width: min(85%, 600px);
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      box-shadow: 0 6px 18px rgba(31, 41, 55, 0.06);
+      font-size: 13px;
+    }
+
+    .message.user {
+      margin-left: auto;
+      border-color: rgba(29, 78, 216, 0.18);
+      background: rgba(219, 234, 254, 0.78);
+    }
+
+    .message.assistant {
+      border-color: rgba(15, 118, 110, 0.18);
+      background: rgba(204, 251, 241, 0.58);
+    }
+
+    .message-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .role {
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .role.user { color: var(--user); }
+    .role.assistant { color: var(--assistant); }
+
+    .message-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .composer {
+      padding: 14px 16px;
+      border-top: 1px solid var(--line);
+      flex-shrink: 0;
+      display: grid;
+      gap: 10px;
+    }
+
+    .log {
+      background: rgba(24, 24, 27, 0.92);
+      color: #f5f5f5;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 11px;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 6px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-badge.pending { background: #fef3c7; color: #92400e; }
+    .status-badge.processing { background: #dbeafe; color: #1e40af; }
+    .status-badge.completed { background: #d1fae5; color: #065f46; }
+    .status-badge.failed { background: #fee2e2; color: #991b1b; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .hero { flex-direction: column; align-items: flex-start; }
+      .chat-grid { min-height: 500px; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .shell { height: auto; min-height: 100vh; }
+      .panel { min-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div>
+        <h1>Sessions Playground</h1>
+        <p>测试会话创建、管理及异步消息功能</p>
+      </div>
+      <div class="badge" id="serviceStatus">服务地址: loading...</div>
+    </div>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-inner stack">
+          <div class="panel-title">
+            <h2>会话管理</h2>
+            <button class="secondary" id="refreshSessionsBtn" type="button">刷新</button>
+          </div>
+
+          <div class="stack">
+            <div>
+              <label for="baseUrlInput">API Base URL</label>
+              <input id="baseUrlInput" type="text">
+            </div>
+            <div>
+              <label for="externalSourceInput">externalSource</label>
+              <input id="externalSourceInput" type="text" placeholder="例如 wechat">
+            </div>
+            <div>
+              <label for="externalConversationIdInput">externalConversationId</label>
+              <input id="externalConversationIdInput" type="text" placeholder="例如 conv-001">
+            </div>
+            <div class="row">
+              <button id="createSessionBtn" type="button">创建会话</button>
+              <button class="warn" id="deleteSessionBtn" type="button" disabled>删除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-title" style="padding: 12px 16px 8px; margin: 0;">
+          <h2>会话列表</h2>
+          <span class="hint" id="sessionCount">0 个会话</span>
+        </div>
+
+        <div class="sessions-wrapper">
+          <div class="sessions" id="sessionsList"></div>
+        </div>
+      </section>
+
+      <section class="panel chat-grid">
+        <div class="chat-head">
+          <div class="panel-title" style="margin-bottom: 0;">
+            <h2>消息调试</h2>
+            <span class="hint" id="selectedSessionLabel">未选择会话</span>
+          </div>
+          <div class="meta-grid">
+            <div>
+              <strong>Session ID</strong>
+              <div class="status-line" id="selectedSessionId">-</div>
+            </div>
+            <div>
+              <strong>Status</strong>
+              <div class="status-line" id="selectedSessionStatus">-</div>
+            </div>
+            <div>
+              <strong>Created</strong>
+              <div class="status-line" id="selectedSessionCreatedAt">-</div>
+            </div>
+            <div>
+              <strong>Mappings</strong>
+              <div class="status-line" id="selectedSessionMappings">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="messages-wrapper">
+          <div class="messages" id="messagesPanel">
+            <div class="empty">选择或创建会话后开始对话</div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <div class="hint">异步模式：发送后立即返回，结果通过 SSE 推送</div>
+          <textarea id="messageInput" placeholder="输入测试消息..." disabled></textarea>
+          <div class="row">
+            <button id="sendMessageBtn" type="button" disabled>发送消息</button>
+            <button class="secondary" id="reloadMessagesBtn" type="button" disabled>刷新消息</button>
+          </div>
+          <div>
+            <div class="hint" style="margin-bottom: 6px;">最近响应</div>
+            <div class="log" id="responseLog">等待操作...</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      baseUrl: window.location.origin,
+      sessions: [],
+      selectedSessionId: null,
+      selectedSession: null,
+      asyncMode: true,
+      sseConnection: null,
+      pendingMessages: new Map()
+    };
+
+    const elements = {
+      baseUrlInput: document.getElementById('baseUrlInput'),
+      externalSourceInput: document.getElementById('externalSourceInput'),
+      externalConversationIdInput: document.getElementById('externalConversationIdInput'),
+      createSessionBtn: document.getElementById('createSessionBtn'),
+      refreshSessionsBtn: document.getElementById('refreshSessionsBtn'),
+      deleteSessionBtn: document.getElementById('deleteSessionBtn'),
+      sessionsList: document.getElementById('sessionsList'),
+      sessionCount: document.getElementById('sessionCount'),
+      serviceStatus: document.getElementById('serviceStatus'),
+      selectedSessionLabel: document.getElementById('selectedSessionLabel'),
+      selectedSessionId: document.getElementById('selectedSessionId'),
+      selectedSessionStatus: document.getElementById('selectedSessionStatus'),
+      selectedSessionCreatedAt: document.getElementById('selectedSessionCreatedAt'),
+      selectedSessionMappings: document.getElementById('selectedSessionMappings'),
+      messagesPanel: document.getElementById('messagesPanel'),
+      messageInput: document.getElementById('messageInput'),
+      sendMessageBtn: document.getElementById('sendMessageBtn'),
+      reloadMessagesBtn: document.getElementById('reloadMessagesBtn'),
+      responseLog: document.getElementById('responseLog')
+    };
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function setLog(value) {
+      elements.responseLog.textContent = typeof value === 'string'
+        ? value
+        : JSON.stringify(value, null, 2);
+    }
+
+    function getBaseUrl() {
+      const value = elements.baseUrlInput.value.trim();
+      return value || window.location.origin;
+    }
+
+    async function api(path, options) {
+      const url = new URL(path, getBaseUrl()).toString();
+      const response = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options
+      });
+
+      const text = await response.text();
+      let data = null;
+
+      if (text) {
+        try { data = JSON.parse(text); } catch { data = text; }
+      }
+
+      if (!response.ok) {
+        const message = data && data.error ? data.error : 'Request failed: ' + response.status;
+        throw new Error(message);
+      }
+
+      setLog(data || { ok: true, status: response.status });
+      return data;
+    }
+
+    function formatTime(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }
+
+    function updateSelectionControls() {
+      const hasActiveSession = !!state.selectedSessionId && state.selectedSession && state.selectedSession.status === 'active';
+      elements.deleteSessionBtn.disabled = !state.selectedSessionId;
+      elements.sendMessageBtn.disabled = !hasActiveSession;
+      elements.reloadMessagesBtn.disabled = !state.selectedSessionId;
+      elements.messageInput.disabled = !hasActiveSession;
+    }
+
+    function renderSessionMeta() {
+      const session = state.selectedSession;
+      if (!session) {
+        elements.selectedSessionLabel.textContent = '未选择会话';
+        elements.selectedSessionId.textContent = '-';
+        elements.selectedSessionStatus.textContent = '-';
+        elements.selectedSessionCreatedAt.textContent = '-';
+        elements.selectedSessionMappings.textContent = '-';
+        updateSelectionControls();
+        return;
+      }
+
+      elements.selectedSessionLabel.textContent = '已连接';
+      elements.selectedSessionId.textContent = session.sessionId;
+      elements.selectedSessionStatus.textContent = session.status;
+      elements.selectedSessionCreatedAt.textContent = formatTime(session.createdAt);
+      elements.selectedSessionMappings.textContent = session.externalMappings && session.externalMappings.length
+        ? session.externalMappings.map(item => item.source + '/' + item.conversationId).join(', ')
+        : 'none';
+      updateSelectionControls();
+    }
+
+    function renderSessions() {
+      elements.sessionCount.textContent = state.sessions.length + ' 个会话';
+
+      if (!state.sessions.length) {
+        elements.sessionsList.innerHTML = '<div class="empty">暂无会话</div>';
+        return;
+      }
+
+      elements.sessionsList.innerHTML = state.sessions.map(session => {
+        const mappings = session.externalMappings && session.externalMappings.length
+          ? session.externalMappings.map(item => item.source + '/' + item.conversationId).join(', ')
+          : 'none';
+        const activeClass = state.selectedSessionId === session.sessionId ? ' active' : '';
+
+        return '<button type="button" class="session-card' + activeClass + '" data-session-id="' + escapeHtml(session.sessionId) + '">'
+          + '<strong>' + escapeHtml(session.sessionId.slice(0, 12)) + '...</strong>'
+          + '<div class="session-meta">' + session.status + ' · ' + escapeHtml(formatTime(session.createdAt)) + '</div>'
+          + '</button>';
+      }).join('');
+
+      elements.sessionsList.querySelectorAll('[data-session-id]').forEach(button => {
+        button.addEventListener('click', () => {
+          const sessionId = button.getAttribute('data-session-id');
+          if (sessionId) selectSession(sessionId).catch(handleError);
+        });
+      });
+    }
+
+    function renderMessages(messages) {
+      if (!messages || !messages.length) {
+        elements.messagesPanel.innerHTML = '<div class="empty">暂无消息</div>';
+        return;
+      }
+
+      elements.messagesPanel.innerHTML = messages.map(message => {
+        const roleClass = escapeHtml(message.role || 'assistant');
+        const statusBadge = message.status
+          ? '<span class="status-badge ' + escapeHtml(message.status) + '">' + escapeHtml(message.status) + '</span>'
+          : '';
+
+        return '<article class="message ' + roleClass + '" data-message-id="' + escapeHtml(message.id || '') + '">'
+          + '<div class="message-head">'
+          + '<span class="role ' + roleClass + '">' + escapeHtml(message.role) + '</span>'
+          + '<span>' + escapeHtml(formatTime(message.createdAt)) + '</span>'
+          + (statusBadge ? '<span>' + statusBadge + '</span>' : '')
+          + '</div>'
+          + '<div class="message-text">' + escapeHtml(message.content) + '</div>'
+          + (message.error ? '<div class="hint" style="color: #991b1b; margin-top: 6px;">错误: ' + escapeHtml(message.error) + '</div>' : '')
+          + '</article>';
+      }).join('');
+
+      elements.messagesPanel.scrollTop = elements.messagesPanel.scrollHeight;
+    }
+
+    async function loadSessions() {
+      const sessions = await api('/sessions');
+      state.sessions = Array.isArray(sessions) ? sessions : [];
+
+      if (state.selectedSessionId) {
+        state.selectedSession = state.sessions.find(item => item.sessionId === state.selectedSessionId) || null;
+        if (!state.selectedSession) {
+          state.selectedSessionId = null;
+          renderMessages([]);
+        }
+      }
+
+      renderSessions();
+      renderSessionMeta();
+    }
+
+    async function selectSession(sessionId) {
+      closeSSEConnection();
+      state.pendingMessages.clear();
+
+      const session = await api('/sessions/' + encodeURIComponent(sessionId));
+      state.selectedSessionId = session.sessionId;
+      state.selectedSession = session;
+      renderSessions();
+      renderSessionMeta();
+      await loadMessages();
+      ensureSSEConnection();
+    }
+
+    async function loadMessages() {
+      if (!state.selectedSessionId) {
+        renderMessages([]);
+        return;
+      }
+      const data = await api('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/messages');
+      renderMessages(data.messages || []);
+    }
+
+    async function createSession() {
+      const payload = {};
+      const source = elements.externalSourceInput.value.trim();
+      const conversationId = elements.externalConversationIdInput.value.trim();
+
+      if (source) payload.externalSource = source;
+      if (conversationId) payload.externalConversationId = conversationId;
+
+      const data = await api('/sessions', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      await loadSessions();
+      await selectSession(data.sessionId);
+    }
+
+    async function deleteSelectedSession() {
+      if (!state.selectedSessionId) return;
+      await api('/sessions/' + encodeURIComponent(state.selectedSessionId), { method: 'DELETE' });
+      state.selectedSessionId = null;
+      state.selectedSession = null;
+      renderMessages([]);
+      await loadSessions();
+    }
+
+    async function sendMessage() {
+      if (!state.selectedSessionId) return;
+
+      const message = elements.messageInput.value.trim();
+      if (!message) throw new Error('请输入消息内容');
+
+      elements.messageInput.value = '';
+      ensureSSEConnection();
+
+      try {
+        const data = await api('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/messages', {
+          method: 'POST',
+          body: JSON.stringify({ message })
+        });
+
+        const backendMessageId = data.messageId;
+        const userMessage = {
+          id: backendMessageId,
+          role: 'user',
+          content: message,
+          createdAt: new Date().toISOString(),
+          status: 'processing'
+        };
+        const pendingMessage = {
+          id: 'pending-' + backendMessageId,
+          role: 'assistant',
+          content: '处理中...',
+          createdAt: new Date().toISOString(),
+          status: 'processing'
+        };
+
+        state.pendingMessages.set(backendMessageId, { userMessage, pendingMessage });
+        await reloadMessagesWithPending();
+      } catch (error) {
+        await loadMessages();
+        throw error;
+      }
+    }
+
+    function ensureSSEConnection() {
+      if (state.sseConnection || !state.selectedSessionId) return;
+
+      const url = new URL('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/events', getBaseUrl());
+      state.sseConnection = new EventSource(url.toString());
+
+      state.sseConnection.addEventListener('message', event => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'message_result') {
+            handleAsyncResult(data.data);
+          }
+        } catch (e) {
+          console.error('Failed to parse SSE message:', e);
+        }
+      });
+
+      state.sseConnection.addEventListener('error', () => {
+        console.warn('SSE connection error');
+        state.sseConnection.close();
+        state.sseConnection = null;
+      });
+
+      state.sseConnection.addEventListener('open', () => {
+        console.log('SSE connected');
+      });
+    }
+
+    function handleAsyncResult(result) {
+      if (!result.messageId) return;
+      const pending = state.pendingMessages.get(result.messageId);
+      if (pending) {
+        state.pendingMessages.delete(result.messageId);
+        reloadMessagesWithPending().then(() => {
+          setLog({ asyncResult: result });
+        });
+      }
+    }
+
+    async function reloadMessagesWithPending() {
+      if (!state.selectedSessionId) return;
+      const data = await api('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/messages');
+      const messages = data.messages || [];
+
+      state.pendingMessages.forEach(pending => {
+        messages.push(pending.userMessage);
+        messages.push(pending.pendingMessage);
+      });
+
+      renderMessages(messages);
+    }
+
+    function closeSSEConnection() {
+      if (state.sseConnection) {
+        state.sseConnection.close();
+        state.sseConnection = null;
+      }
+    }
+
+    function handleError(error) {
+      setLog({ error: error instanceof Error ? error.message : String(error) });
+      console.error(error);
+    }
+
+    async function initialize() {
+      elements.baseUrlInput.value = state.baseUrl;
+      elements.serviceStatus.textContent = '服务: ' + state.baseUrl;
+
+      elements.baseUrlInput.addEventListener('change', () => {
+        state.baseUrl = getBaseUrl();
+        elements.serviceStatus.textContent = '服务: ' + state.baseUrl;
+        loadSessions().catch(handleError);
+      });
+
+      elements.refreshSessionsBtn.addEventListener('click', () => {
+        loadSessions().catch(handleError);
+      });
+
+      elements.createSessionBtn.addEventListener('click', () => {
+        createSession().catch(handleError);
+      });
+
+      elements.deleteSessionBtn.addEventListener('click', () => {
+        deleteSelectedSession().catch(handleError);
+      });
+
+      elements.reloadMessagesBtn.addEventListener('click', () => {
+        loadMessages().catch(handleError);
+      });
+
+      elements.sendMessageBtn.addEventListener('click', () => {
+        sendMessage().catch(handleError);
+      });
+
+      elements.messageInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sendMessage().catch(handleError);
+        }
+      });
+
+      await loadSessions();
+      updateSelectionControls();
+    }
+
+    initialize().catch(handleError);
+  </script>
+</body>
+</html>

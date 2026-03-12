@@ -48,6 +48,27 @@
         "type": "number",
         "description": "会话超时天数",
         "default": 30
+      },
+      "asyncMessage": {
+        "type": "object",
+        "description": "异步消息配置",
+        "properties": {
+          "maxConcurrentTasks": {
+            "type": "number",
+            "description": "最大并发任务数",
+            "default": 10
+          },
+          "taskTimeoutMs": {
+            "type": "number",
+            "description": "任务超时时间（毫秒）",
+            "default": 300000
+          },
+          "maxRetries": {
+            "type": "number",
+            "description": "失败重试次数",
+            "default": 2
+          }
+        }
       }
     }
   },
@@ -227,6 +248,53 @@
       },
       "timeoutMs": 120000,
       "idempotent": false
+    },
+    {
+      "action": "submit_message_async",
+      "description": "异步提交用户消息进行对话，立即返回消息ID，结果通过消息总线推送",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "message": { "type": "string" },
+          "callbackTopic": { "type": "string", "description": "结果回调主题" }
+        },
+        "required": ["sessionId", "message"]
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "messageId": { "type": "string" },
+          "taskId": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "processing", "completed", "failed"] }
+        }
+      },
+      "timeoutMs": 5000,
+      "idempotent": false
+    },
+    {
+      "action": "async_message_result",
+      "description": "异步消息处理结果通知",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "messageId": { "type": "string" },
+          "userMessage": { "type": "object" },
+          "reply": { "type": "object" },
+          "ok": { "type": "boolean" },
+          "error": { "type": "string" }
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "acknowledged": { "type": "boolean" }
+        }
+      },
+      "timeoutMs": 5000,
+      "idempotent": true
     }
   ],
   "dataPolicy": {
