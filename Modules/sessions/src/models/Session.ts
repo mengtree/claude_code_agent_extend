@@ -8,12 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type {
-  StoredSession,
-  SessionStatus,
-  CreateSessionRequest,
-  SessionMessage
-} from '../types/index.js';
+import type { StoredSession, SessionStatus, CreateSessionRequest, SessionMessage } from '../types/index.js';
 
 /**
  * 会话存储选项
@@ -174,6 +169,32 @@ export class SessionModel {
   }
 
   /**
+   * 更新会话活跃时间
+   */
+  async touch(sessionId: string): Promise<void> {
+    const session = await this.findById(sessionId);
+    if (session) {
+      session.lastActiveAt = new Date().toISOString();
+      session.updatedAt = new Date().toISOString();
+      await this.saveSession(session);
+    }
+  }
+
+  /**
+   * 删除会话（软删除）
+   */
+  async delete(sessionId: string): Promise<boolean> {
+    const session = await this.findById(sessionId);
+    if (!session) return false;
+
+    session.status = 'deleted';
+    session.updatedAt = new Date().toISOString();
+    session.lastActiveAt = new Date().toISOString();
+    await this.saveSession(session);
+    return true;
+  }
+
+  /**
    * 获取会话消息
    */
   async listMessages(sessionId: string): Promise<SessionMessage[]> {
@@ -182,9 +203,9 @@ export class SessionModel {
   }
 
   /**
-   * 提交消息并生成本地测试回复
+   * 追加一轮消息
    */
-  async submitMessage(sessionId: string, message: string): Promise<{
+  async appendMessageTurn(sessionId: string, message: string, reply: string): Promise<{
     userMessage: SessionMessage;
     assistantMessage: SessionMessage;
     messages: SessionMessage[];
@@ -211,7 +232,7 @@ export class SessionModel {
       id: randomUUID(),
       sessionId,
       role: 'assistant',
-      content: this.buildAssistantReply(session, message, history.length),
+      content: reply,
       createdAt: new Date().toISOString()
     };
 
@@ -226,31 +247,6 @@ export class SessionModel {
       assistantMessage,
       messages: [...history]
     };
-  }
-
-  /**
-   * 更新会话活跃时间
-   */
-  async touch(sessionId: string): Promise<void> {
-    const session = await this.findById(sessionId);
-    if (session) {
-      session.lastActiveAt = new Date().toISOString();
-      session.updatedAt = new Date().toISOString();
-      await this.saveSession(session);
-    }
-  }
-
-  /**
-   * 删除会话（软删除）
-   */
-  async delete(sessionId: string): Promise<boolean> {
-    const session = await this.findById(sessionId);
-    if (!session) return false;
-
-    session.status = 'deleted';
-    session.updatedAt = new Date().toISOString();
-    await this.saveSession(session);
-    return true;
   }
 
   /**
@@ -392,30 +388,6 @@ export class SessionModel {
     if (!this.messagesCache) {
       await this.loadMessages();
     }
-  }
-
-  /**
-   * 生成本地测试回复
-   */
-  private buildAssistantReply(
-    session: StoredSession,
-    message: string,
-    previousMessageCount: number
-  ): string {
-    const mappings = session.externalMappings.length > 0
-      ? session.externalMappings
-          .map(mapping => `${mapping.source}/${mapping.conversationId}`)
-          .join(', ')
-      : 'none';
-
-    return [
-      'This is a local test reply from the sessions module.',
-      `Received: ${message}`,
-      `Session: ${session.id}`,
-      `External mappings: ${mappings}`,
-      `Messages before this turn: ${previousMessageCount}`,
-      'Claude SDK is not connected yet; this page is for API smoke testing.'
-    ].join('\n');
   }
 
   /**

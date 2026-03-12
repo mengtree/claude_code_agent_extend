@@ -10,6 +10,7 @@ import { URL } from 'node:url';
 import { QueryController } from '../controllers/QueryController.js';
 import { SessionController } from '../controllers/SessionController.js';
 import { HealthController } from '../controllers/HealthController.js';
+import { MessageController } from '../controllers/MessageController.js';
 import { SessionModel } from '../models/Session.js';
 
 /**
@@ -17,28 +18,14 @@ import { SessionModel } from '../models/Session.js';
  */
 export class Router {
   private server?: Server;
-  private defaultSessionId?: string;
 
   constructor(
     private readonly queryController: QueryController,
     private readonly sessionController: SessionController,
     private readonly healthController: HealthController,
+    private readonly messageController: MessageController,
     private readonly sessionModel: SessionModel
   ) {}
-
-  /**
-   * 设置默认会话 ID
-   */
-  setDefaultSessionId(sessionId: string | undefined): void {
-    this.defaultSessionId = sessionId;
-  }
-
-  /**
-   * 获取默认会话 ID
-   */
-  getDefaultSessionId(): string | undefined {
-    return this.defaultSessionId;
-  }
 
   /**
    * 创建并启动 HTTP 服务器（非阻塞）
@@ -126,6 +113,12 @@ export class Router {
       return;
     }
 
+    // 通用消息端点
+    if (method === 'POST' && url.pathname === '/messages') {
+      await this.messageController.handleMessage(request, response);
+      return;
+    }
+
     // 创建会话
     if (method === 'POST' && url.pathname === '/sessions') {
       await this.sessionController.handleCreateSession(request, response);
@@ -174,7 +167,8 @@ export function createRouter(
   queryController: QueryController,
   sessionController: SessionController,
   healthController: HealthController,
+  messageController: MessageController,
   sessionModel: SessionModel
 ): Router {
-  return new Router(queryController, sessionController, healthController, sessionModel);
+  return new Router(queryController, sessionController, healthController, messageController, sessionModel);
 }

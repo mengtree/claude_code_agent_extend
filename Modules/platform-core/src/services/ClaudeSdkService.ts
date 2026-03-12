@@ -6,16 +6,25 @@
 
 import type { Options as ClaudeSdkOptions, Query as ClaudeSdkQuery, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
 import type {
   ClaudeQueryRequest,
   ClaudeQueryResponse,
   ClaudeSdkRawResult
 } from '../types/index.js';
+import { fileURLToPath } from 'node:url';
 
 /**
  * SDK 动态导入类型
  */
 type ClaudeSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
+
+const dynamicImport = new Function(
+  'specifier',
+  'return import(specifier);'
+) as (specifier: string) => Promise<ClaudeSdkModule>;
+
+const defaultWorkingDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
  * 流式查询回调函数类型
@@ -50,10 +59,11 @@ export class ClaudeSdkService {
   async execute(request: ClaudeQueryRequest): Promise<ClaudeQueryResponse> {
     const queryId = randomUUID();
     const startTime = Date.now();
+    const abortController = new AbortController();
 
     try {
       const sdk = await this.loadSdkModule();
-      const options = this.buildSdkOptions(request);
+      const options = this.buildSdkOptions(request, abortController);
 
       const query = sdk.query({
         prompt: request.prompt,
@@ -93,11 +103,12 @@ export class ClaudeSdkService {
   ): Promise<ClaudeQueryResponse> {
     const queryId = randomUUID();
     const startTime = Date.now();
+    const abortController = new AbortController();
     let rawResult: ClaudeSdkRawResult | undefined;
 
     try {
       const sdk = await this.loadSdkModule();
-      const options = this.buildSdkOptions(request, callbacks.abortSignal);
+      const options = this.buildSdkOptions(request, abortController);
 
       const query = sdk.query({
         prompt: request.prompt,
@@ -109,6 +120,7 @@ export class ClaudeSdkService {
       // 设置取消信号处理
       if (callbacks.abortSignal) {
         const handleAbort = () => {
+          abortController.abort();
           this.cancelQuery(queryId);
         };
 
@@ -187,10 +199,11 @@ export class ClaudeSdkService {
    */
   private buildSdkOptions(
     request: ClaudeQueryRequest,
-    abortSignal?: AbortSignal
+    abortController: AbortController
   ): ClaudeSdkOptions {
     const options: ClaudeSdkOptions = {
-      abortController: abortSignal ? new AbortController() : undefined,
+      abortController,
+      cwd: request.workingDirectory || defaultWorkingDirectory,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       persistSession: true,
@@ -207,8 +220,8 @@ export class ClaudeSdkService {
     }
 
     // 设置会话恢复
-    if (request.sessionId) {
-      options.resume = request.sessionId;
+    if (request.claudeSessionId) {
+      options.resume = request.claudeSessionId;
     }
 
     return options;
@@ -219,7 +232,7 @@ export class ClaudeSdkService {
    */
   private async loadSdkModule(): Promise<ClaudeSdkModule> {
     if (!this.sdkModulePromise) {
-      this.sdkModulePromise = import('@anthropic-ai/claude-agent-sdk');
+      this.sdkModulePromise = dynamicImport('@anthropic-ai/claude-agent-sdk');
     }
     return this.sdkModulePromise;
   }

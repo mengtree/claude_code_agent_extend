@@ -1,0 +1,11 @@
+{
+  "port": 3200,
+  "host": "127.0.0.1",
+  "modulesRoot": "../Modules",
+  "logLevel": "info",
+  "healthCheckInterval": 15000,
+  "maxRestarts": 3,
+  "restartBackoffMs": 5000,
+  "startupDelayMs": 1000,
+  "moduleStartDelayMs": 2000
+}

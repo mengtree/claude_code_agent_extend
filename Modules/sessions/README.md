@@ -80,6 +80,8 @@ Content-Type: application/json
 
 返回用户消息、模块生成的测试回复，以及当前会话全部消息。
 
+当前实现会通过通用消息 Envelope 调用 platform-core 的 `/messages` 端点，再把 reply envelope 中的真实响应落库。
+
 {
   "externalSource": "wechat",
   "externalConversationId": "conv-001"
@@ -151,6 +153,7 @@ DELETE /sessions/{sessionId}
 - `SESSIONS_LOG_LEVEL`: 日志级别
 - `SESSIONS_DATA_DIR`: 数据目录
 - `SESSIONS_TIMEOUT_DAYS`: 会话超时天数
+- `SESSIONS_PLATFORM_CORE_URL`: platform-core 服务地址
 
 ## 与核心平台集成
 

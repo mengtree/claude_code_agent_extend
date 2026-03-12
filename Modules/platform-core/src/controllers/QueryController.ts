@@ -15,10 +15,7 @@ import { ValidationError } from '../types/index.js';
  * 查询控制器类
  */
 export class QueryController {
-  constructor(
-    private readonly sdkService: ClaudeSdkService,
-    private readonly getDefaultSessionId: () => string | undefined
-  ) {}
+  constructor(private readonly sdkService: ClaudeSdkService) {}
 
   /**
    * 处理查询请求（POST /query）
@@ -141,12 +138,6 @@ export class QueryController {
     // 可选参数
     if (typeof req.sessionId === 'string' && req.sessionId.trim().length > 0) {
       queryRequest.sessionId = req.sessionId.trim();
-    } else {
-      // 使用默认会话 ID
-      const defaultSessionId = this.getDefaultSessionId();
-      if (defaultSessionId) {
-        queryRequest.sessionId = defaultSessionId;
-      }
     }
 
     if (typeof req.systemPrompt === 'string' && req.systemPrompt.trim().length > 0) {

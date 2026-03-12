@@ -200,6 +200,10 @@ export interface SessionsConfig {
   dataDir: string;
   /** 会话超时天数 */
   sessionTimeoutDays: number;
+  /** platform-core 通用消息入口 */
+  platformCoreUrl: string;
+  /** Platform 消息总线地址 */
+  messageBusURL?: string;
 }
 
 /**
@@ -220,12 +224,16 @@ export interface MessageEnvelope {
   payload: unknown;
   /** 回复给哪个模块 */
   replyTo: string;
+  /** 回调主题 */
+  callbackTopic?: string;
   /** 超时时间（毫秒） */
   timeoutMs: number;
   /** 上下文信息 */
   context: MessageContext;
   /** 创建时间 */
   createdAt: string;
+  /** 回复的消息 ID */
+  inReplyTo?: string;
 }
 
 /**
@@ -246,6 +254,20 @@ export interface MessageContext {
  * 消息处理器
  */
 export type MessageHandler = (envelope: MessageEnvelope) => void | Promise<void>;
+
+/**
+ * platform-core 消息回复载荷
+ */
+export interface PlatformCoreReplyPayload {
+  ok: boolean;
+  response: string;
+  sessionId?: string;
+  claudeSessionId?: string;
+  durationMs?: number;
+  costUsd?: number;
+  stopReason?: string;
+  raw?: Record<string, unknown>;
+}
 
 /**
  * 错误类型

@@ -17,12 +17,16 @@ import type {
 } from '../types/index.js';
 import { SessionModel } from '../models/Session.js';
 import { ValidationError, SessionNotFoundError } from '../types/index.js';
+import { PlatformCoreMessageClient } from '../services/PlatformCoreMessageClient.js';
 
 /**
  * 会话控制器类
  */
 export class SessionController {
-  constructor(private readonly sessionModel: SessionModel) {}
+  constructor(
+    private readonly sessionModel: SessionModel,
+    private readonly platformCoreClient: PlatformCoreMessageClient
+  ) {}
 
   /**
    * 处理创建会话请求（POST /sessions）
@@ -132,7 +136,23 @@ export class SessionController {
 
       const body = await this.readJsonBody(request);
       const sendRequest = this.validateSendMessageRequest(body);
-      const result = await this.sessionModel.submitMessage(sessionId, sendRequest.message);
+      const coreReply = await this.platformCoreClient.sendUserMessage({
+        sessionId,
+        message: sendRequest.message,
+        claudeSessionId: session.claudeSessionId
+      });
+
+      if (coreReply.claudeSessionId) {
+        await this.sessionModel.update(sessionId, {
+          claudeSessionId: coreReply.claudeSessionId
+        });
+      }
+
+      const result = await this.sessionModel.appendMessageTurn(
+        sessionId,
+        sendRequest.message,
+        coreReply.response
+      );
 
       const payload: SendSessionMessageResponse = {
         sessionId,

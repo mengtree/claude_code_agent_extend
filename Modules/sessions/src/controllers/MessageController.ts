@@ -1,25 +1,140 @@
 /**
  * 消息控制器
  *
- * 负责处理来自核心平台的消息总线请求
+ * 负责处理来自核心平台的消息总线请求，并支持通过 Platform 消息总线进行模块间通信。
  */
 
 import type { ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { MessageEnvelope, MessageHandler } from '../types/index.js';
 import { ValidationError } from '../types/index.js';
+import type { MessageBusClient } from '../services/MessageBusClient.js';
 
 /**
  * 消息控制器类
  */
 export class MessageController {
   private readonly handlers: Map<string, MessageHandler> = new Map();
+  private messageBusClient?: MessageBusClient;
+  private sseSubscription?: {
+    unsubscribe: () => void;
+  };
+
+  constructor(
+    private readonly moduleId: string,
+    options?: {
+      /** Platform 消息总线地址 */
+      messageBusURL?: string;
+      /** 是否自动订阅消息总线 */
+      autoSubscribe?: boolean;
+    }
+  ) {
+    if (options?.messageBusURL) {
+      this.initMessageBus(options.messageBusURL, options.autoSubscribe ?? true);
+    }
+  }
 
   /**
    * 注册消息处理器
    */
   registerHandler(action: string, handler: MessageHandler): void {
     this.handlers.set(action, handler);
+  }
+
+  /**
+   * 初始化消息总线客户端
+   */
+  private initMessageBus(baseURL: string, autoSubscribe: boolean): void {
+    // 动态导入 MessageBusClient
+    import('../services/MessageBusClient.js').then(({ createMessageBusClient }) => {
+      this.messageBusClient = createMessageBusClient(baseURL, this.moduleId);
+
+      if (autoSubscribe) {
+        // 订阅发给我的消息
+        this.sseSubscription = this.messageBusClient.subscribeSSE(
+          {
+            topics: [`module.${this.moduleId}.*`]
+          },
+          {
+            onMessage: this.handleBusMessage.bind(this),
+            onError: (error) => {
+              console.error(`[${this.moduleId}] Message bus error:`, error);
+            },
+            onConnected: () => {
+              console.log(`[${this.moduleId}] Connected to message bus`);
+            },
+            onDisconnected: () => {
+              console.log(`[${this.moduleId}] Disconnected from message bus`);
+            },
+            autoReconnect: true
+          }
+        );
+      }
+
+      console.log(`[${this.moduleId}] Message bus client initialized`);
+    }).catch((error) => {
+      console.error(`[${this.moduleId}] Failed to initialize message bus:`, error);
+    });
+  }
+
+  /**
+   * 处理来自消息总线的消息
+   */
+  private async handleBusMessage(envelope: MessageEnvelope): Promise<void> {
+    const handler = this.handlers.get(envelope.action);
+
+    if (!handler) {
+      console.warn(`[${this.moduleId}] No handler for action: ${envelope.action}`);
+      // 发送错误回复
+      if (this.messageBusClient && envelope.replyTo) {
+        await this.messageBusClient.reply(envelope, `Unknown action: ${envelope.action}`, true);
+      }
+      return;
+    }
+
+    try {
+      await handler(envelope);
+    } catch (error) {
+      console.error(`[${this.moduleId}] Error handling message:`, error);
+
+      // 发送错误回复
+      if (this.messageBusClient && envelope.replyTo) {
+        await this.messageBusClient.reply(
+          envelope,
+          error instanceof Error ? error.message : String(error),
+          true
+        );
+      }
+    }
+  }
+
+  /**
+   * 发送消息到消息总线
+   */
+  async sendToBus(config: {
+    toModule?: string;
+    action: string;
+    payload: unknown;
+    replyTo?: string;
+    callbackTopic?: string;
+    traceId?: string;
+    context?: Record<string, unknown>;
+    timeoutMs?: number;
+  }): Promise<{ success: boolean; messageId: string; timestamp: string; error?: string } | null> {
+    if (!this.messageBusClient) {
+      console.warn(`[${this.moduleId}] Message bus client not initialized`);
+      return null;
+    }
+
+    return this.messageBusClient.send(config);
+  }
+
+  /**
+   * 关闭消息总线连接
+   */
+  shutdown(): void {
+    this.sseSubscription?.unsubscribe();
+    this.messageBusClient?.shutdown();
   }
 
   /**

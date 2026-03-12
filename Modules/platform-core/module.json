@@ -1,8 +1,8 @@
 {
   "moduleId": "platform-core",
-  "name": "Platform Core Module",
+  "name": "Platform Core Agent Module",
   "version": "0.1.0",
-  "description": "核心平台模块 - 提供 Claude CLI SDK 对接和流式传输能力",
+  "description": "智能体核心模块 - 提供 Claude SDK 查询、会话和消息回复能力",
   "kind": "core",
   "entry": {
     "command": "node",

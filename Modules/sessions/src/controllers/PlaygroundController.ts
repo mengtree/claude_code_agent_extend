@@ -344,7 +344,7 @@ export class PlaygroundController {
     <div class="hero">
       <div>
         <h1>Sessions Playground</h1>
-        <p>直接测试 sessions 模块的会话创建、列表、删除，以及最小可用的消息收发能力。当前消息回复为模块内置模拟响应，便于联调和冒烟验证。</p>
+        <p>直接测试 sessions 模块的会话创建、列表、删除，以及通过通用消息 Envelope 对接 platform-core 的真实消息收发链路。</p>
       </div>
       <div class="badge" id="serviceStatus">服务地址: loading...</div>
     </div>

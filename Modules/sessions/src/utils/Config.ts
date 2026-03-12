@@ -20,7 +20,9 @@ const DEFAULT_CONFIG: SessionsConfig = {
   host: '127.0.0.1',
   logLevel: 'info',
   dataDir: './runtime/data',
-  sessionTimeoutDays: 30
+  sessionTimeoutDays: 30,
+  platformCoreUrl: 'http://127.0.0.1:3001',
+  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3000'
 };
 
 /**
@@ -71,6 +73,14 @@ export function loadConfigFromEnv(): Partial<SessionsConfig> {
     if (!isNaN(days) && days > 0) {
       config.sessionTimeoutDays = days;
     }
+  }
+
+  if (process.env.SESSIONS_PLATFORM_CORE_URL) {
+    config.platformCoreUrl = process.env.SESSIONS_PLATFORM_CORE_URL;
+  }
+
+  if (process.env.MESSAGE_BUS_URL) {
+    config.messageBusURL = process.env.MESSAGE_BUS_URL;
   }
 
   return config;

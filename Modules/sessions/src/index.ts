@@ -18,6 +18,7 @@ import { SessionController } from './controllers/SessionController.js';
 import { HealthController } from './controllers/HealthController.js';
 import { MessageController } from './controllers/MessageController.js';
 import { PlaygroundController } from './controllers/PlaygroundController.js';
+import { PlatformCoreMessageClient } from './services/PlatformCoreMessageClient.js';
 import { createRouter } from './routes/Router.js';
 import { createLogger } from './utils/Logger.js';
 import { getConfig } from './utils/Config.js';
@@ -34,6 +35,7 @@ export class SessionsApp {
   private readonly healthController: HealthController;
   private readonly messageController: MessageController;
   private readonly playgroundController: PlaygroundController;
+  private readonly platformCoreClient: PlatformCoreMessageClient;
   private readonly router: ReturnType<typeof createRouter>;
 
   constructor(config: SessionsConfig) {
@@ -47,11 +49,19 @@ export class SessionsApp {
 
     // 初始化模型
     this.sessionModel = new SessionModel({ dataDir });
+    this.platformCoreClient = new PlatformCoreMessageClient(this.config.platformCoreUrl);
 
     // 初始化控制器
-    this.sessionController = new SessionController(this.sessionModel);
+    this.sessionController = new SessionController(this.sessionModel, this.platformCoreClient);
     this.healthController = HealthController ? new HealthController('0.1.0') : null as any;
-    this.messageController = new MessageController();
+
+    // 初始化消息控制器（连接到 Platform 消息总线）
+    const messageBusURL = this.config.messageBusURL || 'http://localhost:3000';
+    this.messageController = new MessageController('sessions', {
+      messageBusURL,
+      autoSubscribe: true
+    });
+
     this.playgroundController = new PlaygroundController();
 
     // 设置消息处理
@@ -186,6 +196,7 @@ export class SessionsApp {
     this.logger.info(`Sessions Module started on http://${host}:${port}`);
     this.logger.info(`Health check: http://${host}:${port}/health`);
     this.logger.info(`Playground: http://${host}:${port}/playground`);
+    this.logger.info(`Platform Core Messages: ${this.config.platformCoreUrl}/messages`);
     this.logger.info('Ready to accept requests');
 
     // 设置优雅关闭

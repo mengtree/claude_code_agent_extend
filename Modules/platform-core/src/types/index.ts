@@ -18,8 +18,10 @@
 export interface ClaudeQueryRequest {
   /** 用户提示词 */
   prompt: string;
-  /** 会话 ID（可选，用于多轮对话） */
+  /** 业务会话 ID（可选，用于业务侧关联） */
   sessionId?: string;
+  /** Claude 会话 ID（可选，用于恢复 Claude 多轮对话） */
+  claudeSessionId?: string;
   /** 系统提示词 */
   systemPrompt?: string;
   /** 使用的模型 */
@@ -30,6 +32,8 @@ export interface ClaudeQueryRequest {
   timeoutMs?: number;
   /** JSON Schema（用于结构化输出） */
   jsonSchema?: Record<string, unknown>;
+  /** Claude 执行工作目录 */
+  workingDirectory?: string;
 }
 
 /**
@@ -368,6 +372,8 @@ export interface ModuleConfig {
   sessionPersistence?: boolean;
   /** 日志级别 */
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
+  /** Platform 消息总线地址 */
+  messageBusURL?: string;
 }
 
 /**
@@ -436,112 +442,6 @@ export class SdkExecutionError extends PlatformCoreError {
 }
 
 // ============================================
-// 模块 Manifest 类型
-// ============================================
-
-/**
- * 模块类型
- */
-export type ModuleKind = 'core' | 'adapter' | 'executor' | 'manager';
-
-/**
- * 模块状态
- */
-export type ModuleStatus =
-  | 'registered'
-  | 'installing'
-  | 'stopped'
-  | 'starting'
-  | 'running'
-  | 'unhealthy'
-  | 'restarting'
-  | 'paused'
-  | 'failed'
-  | 'disabled';
-
-/**
- * 模块 Manifest
- */
-export interface ModuleManifest {
-  /** 模块唯一标识 */
-  moduleId: string;
-  /** 模块名称 */
-  name: string;
-  /** 版本号 */
-  version: string;
-  /** 描述 */
-  description?: string;
-  /** 模块类型 */
-  kind: ModuleKind;
-  /** 入口配置 */
-  entry: {
-    command: string;
-    args?: string[];
-  };
-  /** 启动策略 */
-  startup?: {
-    autoStart?: boolean;
-    daemon?: boolean;
-    restartPolicy?: 'always' | 'on-failure' | 'never';
-    restartMaxRetries?: number;
-    restartBackoffMs?: number;
-  };
-  /** 健康检查配置 */
-  healthCheck?: {
-    type: 'http' | 'process' | 'heartbeat';
-    path?: string;
-    intervalMs?: number;
-    timeoutMs?: number;
-    unhealthyThreshold?: number;
-  };
-  /** 配置 Schema */
-  configSchema?: {
-    type: string;
-    properties?: Record<string, unknown>;
-  };
-  /** 能力列表 */
-  capabilities?: ModuleCapability[];
-  /** 数据策略 */
-  dataPolicy?: {
-    isolated?: boolean;
-    dataDir?: string;
-    logDir?: string;
-    tmpDir?: string;
-  };
-  /** 权限 */
-  permissions?: {
-    workspaceRead?: boolean;
-    workspaceWrite?: boolean;
-    network?: boolean;
-    processSpawn?: boolean;
-    envRead?: boolean;
-  };
-  /** 依赖 */
-  dependencies?: {
-    nodejs?: string;
-    npm?: string[];
-  };
-}
-
-/**
- * 模块能力
- */
-export interface ModuleCapability {
-  /** 动作名 */
-  action: string;
-  /** 描述 */
-  description?: string;
-  /** 请求 Schema */
-  requestSchema: Record<string, unknown>;
-  /** 响应 Schema */
-  responseSchema: Record<string, unknown>;
-  /** 超时时间（毫秒） */
-  timeoutMs?: number;
-  /** 是否幂等 */
-  idempotent?: boolean;
-}
-
-// ============================================
 // 消息 Envelope 类型
 // ============================================
 
@@ -586,36 +486,12 @@ export interface MessageEnvelope {
  */
 export type MessageHandler = (envelope: MessageEnvelope) => void | Promise<void>;
 
-// ============================================
-// 平台核心组件类型
-// ============================================
+/**
+ * 模块消息处理结果
+ */
+export type MessageHandlerResult = unknown;
 
 /**
- * 模块注册表选项
+ * 模块消息处理器函数类型
  */
-export interface ModuleRegistryOptions {
-  /** 模块根目录 */
-  modulesRoot: string;
-}
-
-/**
- * 消息总线选项
- */
-export interface MessageBusOptions {
-  /** 最大历史记录大小 */
-  maxHistorySize?: number;
-}
-
-/**
- * 健康检查结果
- */
-export interface HealthCheckResult {
-  /** 是否健康 */
-  healthy: boolean;
-  /** 消息 */
-  message: string;
-  /** HTTP 状态码 */
-  statusCode?: number;
-  /** 耗时（毫秒） */
-  duration?: number;
-}
+export type MessageRequestHandler = (envelope: MessageEnvelope) => MessageHandlerResult | Promise<MessageHandlerResult>;

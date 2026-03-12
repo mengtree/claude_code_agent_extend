@@ -1,15 +1,17 @@
 # Platform Core Module
 
-> 平台核心模块 - 提供 Claude CLI SDK 对接和流式传输能力
+> 智能体核心模块，负责 Claude SDK、会话与消息处理；平台运行时已迁移到 Platform/
 
 ## 简介
 
-平台核心模块（Platform Core）是整个平台的智能中枢，负责：
+platform-core 现在只承载智能体相关能力，负责：
 
 - **Claude CLI SDK 对接**：提供与 Claude AI 模型的交互能力
 - **流式传输**：支持 SSE（Server-Sent Events）实时流式响应
 - **会话管理**：管理多轮对话的会话状态
 - **HTTP API**：提供 RESTful API 接口供其他模块调用
+
+平台级职责已经拆到 Platform/ 启动项目中，包括模块注册、模块守护、平台控制面和统一消息总线统计。
 
 本模块采用 **MVC 架构设计**：
 
@@ -65,7 +67,7 @@ export LOG_LEVEL=info
 npm start
 ```
 
-服务将在 `http://127.0.0.1:3000` 启动。
+服务将在 `http://127.0.0.1:3001` 启动。
 
 ### 健康检查
 
@@ -119,6 +121,29 @@ curl http://localhost:3000/sessions
 curl -X DELETE http://localhost:3000/sessions/{sessionId}
 ```
 
+### 6. 通用模块消息
+
+```bash
+curl -X POST http://localhost:3000/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "traceId": "trace-001",
+    "fromModule": "sessions",
+    "toModule": "platform-core",
+    "action": "submit_user_message",
+    "payload": {
+      "message": "请回复 OK"
+    },
+    "replyTo": "sessions",
+    "timeoutMs": 30000,
+    "context": {
+      "sessionId": "session-001"
+    }
+  }'
+```
+
+返回统一的 reply envelope，供调用模块继续处理。
+
 ## 目录结构
 
 ```
@@ -126,20 +151,13 @@ platform-core/
 ├── src/
 │   ├── types/           # 类型定义
 │   │   └── index.ts
-│   ├── models/          # 模型层（数据管理）
+│   ├── models/          # 会话模型
 │   │   └── Session.ts
-│   ├── controllers/     # 控制器层（请求处理）
-│   │   ├── QueryController.ts
-│   │   ├── SessionController.ts
-│   │   └── HealthController.ts
-│   ├── services/        # 服务层（业务逻辑）
-│   │   └── ClaudeSdkService.ts
-│   ├── routes/          # 路由层
-│   │   └── Router.ts
-│   ├── utils/           # 工具函数
-│   │   ├── Logger.ts
-│   │   └── Config.ts
-│   └── index.ts         # 入口文件
+│   ├── controllers/     # 查询、会话、健康、消息控制器
+│   ├── services/        # Claude SDK 服务
+│   ├── routes/          # HTTP 路由
+│   ├── utils/           # 配置与日志
+│   └── index.ts         # 智能体模块入口
 ├── skills/
 │   └── SKILL.md         # Skill 文档
 ├── tests/
@@ -153,6 +171,12 @@ platform-core/
 ├── tsconfig.json
 └── README.md
 ```
+
+## 模块边界
+
+- Platform/: 平台总线、模块注册、进程守护、控制面
+- Modules/platform-core: 智能体查询、会话、消息回复
+- Modules/sessions: 会话管理与浏览器验证页
 
 ## 架构设计
 

@@ -26,7 +26,8 @@ const DEFAULT_CONFIG: ModuleConfig = {
   defaultTimeoutMs: 120000,
   maxConcurrentSessions: 100,
   sessionPersistence: true,
-  logLevel: 'info'
+  logLevel: 'info',
+  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3000'
 };
 
 /**
@@ -98,6 +99,11 @@ export function loadConfigFromEnv(): Partial<ModuleConfig> {
     if (level === 'debug' || level === 'info' || level === 'warn' || level === 'error') {
       config.logLevel = level;
     }
+  }
+
+  const messageBusURLValue = getEnvValue('MESSAGE_BUS_URL');
+  if (messageBusURLValue) {
+    config.messageBusURL = messageBusURLValue;
   }
 
   return config;
