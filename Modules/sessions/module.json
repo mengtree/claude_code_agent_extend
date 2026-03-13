@@ -8,6 +8,14 @@
     "command": "node",
     "args": ["dist/index.js"]
   },
+  "plugin": {
+    "entry": "dist/index.js",
+    "basePath": "/plugin/sessions",
+    "homePath": "/playground",
+    "displayName": "Sessions 对话面板",
+    "description": "会话管理与异步对话插件",
+    "hasUi": true
+  },
   "startup": {
     "autoStart": true,
     "daemon": true,

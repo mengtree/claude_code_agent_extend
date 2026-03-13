@@ -22,7 +22,7 @@ const DEFAULT_CONFIG: SessionsConfig = {
   dataDir: './runtime/data',
   sessionTimeoutDays: 30,
   platformCoreUrl: 'http://127.0.0.1:3001',
-  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3000'
+  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3200'
 };
 
 /**

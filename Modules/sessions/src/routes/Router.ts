@@ -56,7 +56,7 @@ export class Router {
   async listen(port: number, host: string = '0.0.0.0'): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
-        this.handleRequest(req, res).catch((error) => {
+        this.handle(req, res).catch((error) => {
           console.error('Request handling error:', error);
           if (!res.headersSent) {
             res.statusCode = 500;
@@ -72,6 +72,10 @@ export class Router {
         resolve();
       });
     });
+  }
+
+  async handle(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    await this.handleRequest(request, response, rawUrl);
   }
 
   /**
@@ -98,8 +102,8 @@ export class Router {
   /**
    * 处理 HTTP 请求
    */
-  private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  private async handleRequest(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    const url = new URL(rawUrl || request.url || '/', `http://${request.headers.host || 'localhost'}`);
     const method = request.method?.toUpperCase() || 'GET';
     const path = url.pathname;
 

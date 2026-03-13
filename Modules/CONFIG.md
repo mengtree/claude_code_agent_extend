@@ -1,6 +1,12 @@
 # 模块配置示例
 
-本文档展示如何为各个模块配置 `messageBusURL`。
+本文档展示当前插件化集成模型下，Modules 中各模块如何声明配置并由 Platform 统一加载。
+
+## 当前集成方式
+
+- Platform 扫描 Modules 下的 module.json，并读取其中的 plugin 字段动态加载插件。
+- 插件页面统一由宿主网关暴露，不再为 schedule、sessions 等模块单独启动集成面板端口。
+- `messageBusURL` 默认应指向 Platform 控制面，例如 `http://localhost:3200`。
 
 ## 配置方式
 
@@ -8,7 +14,7 @@
 
 ```bash
 # 设置消息总线地址
-export MESSAGE_BUS_URL=http://localhost:3000
+export MESSAGE_BUS_URL=http://localhost:3200
 
 # 启动 platform-core
 cd Modules/platform-core
@@ -31,9 +37,9 @@ npm start
 
 ```json
 {
-  "port": 3000,
+  "port": 3001,
   "host": "127.0.0.1",
-  "messageBusURL": "http://localhost:3000",
+  "messageBusURL": "http://localhost:3200",
   "defaultModel": "claude-sonnet-4-6",
   "logLevel": "info"
 }
@@ -41,8 +47,8 @@ npm start
 
 **环境变量**:
 ```bash
-export PLATFORM_CORE_PORT=3000
-export PLATFORM_CORE_MESSAGE_BUS_URL=http://localhost:3000
+export PLATFORM_CORE_PORT=3001
+export PLATFORM_CORE_MESSAGE_BUS_URL=http://localhost:3200
 ```
 
 ### sessions 模块
@@ -53,8 +59,8 @@ export PLATFORM_CORE_MESSAGE_BUS_URL=http://localhost:3000
 {
   "port": 3010,
   "host": "127.0.0.1",
-  "messageBusURL": "http://localhost:3000",
-  "platformCoreUrl": "http://127.0.0.1:3000",
+  "messageBusURL": "http://localhost:3200",
+  "platformCoreUrl": "http://127.0.0.1:3200",
   "logLevel": "info"
 }
 ```
@@ -62,8 +68,8 @@ export PLATFORM_CORE_MESSAGE_BUS_URL=http://localhost:3000
 **环境变量**:
 ```bash
 export SESSIONS_PORT=3010
-export SESSIONS_MESSAGE_BUS_URL=http://localhost:3000
-export SESSIONS_PLATFORM_CORE_URL=http://127.0.0.1:3000
+export SESSIONS_MESSAGE_BUS_URL=http://localhost:3200
+export SESSIONS_PLATFORM_CORE_URL=http://127.0.0.1:3200
 ```
 
 ### schedule 模块
@@ -74,8 +80,6 @@ export SESSIONS_PLATFORM_CORE_URL=http://127.0.0.1:3000
 {
   "port": 3014,
   "host": "127.0.0.1",
-  "panelPort": 0,
-  "panelHost": "127.0.0.1",
   "messageBusURL": "http://localhost:3200",
   "scanIntervalMs": 1000,
   "claimTimeoutMs": 300000,
@@ -86,19 +90,18 @@ export SESSIONS_PLATFORM_CORE_URL=http://127.0.0.1:3000
 **环境变量**:
 ```bash
 export SCHEDULE_PORT=3014
-export SCHEDULE_PANEL_PORT=0
 export MESSAGE_BUS_URL=http://localhost:3200
 ```
 
 ## 完整启动示例
 
-### 1. 启动 Platform 消息总线
+### 1. 启动 Platform 宿主
 
 ```bash
 cd Platform
 npm start
 
-# 消息总线将在 http://localhost:3000 运行
+# 宿主将在 http://localhost:3200 运行，并自动加载标记为 autoStart 的插件模块
 ```
 
 ### 2. 启动 platform-core 模块
@@ -107,12 +110,12 @@ npm start
 cd Modules/platform-core
 
 # 方式 1: 使用环境变量
-MESSAGE_BUS_URL=http://localhost:3000 npm start
+MESSAGE_BUS_URL=http://localhost:3200 npm start
 
 # 方式 2: 使用配置文件（需先创建 config.json）
 npm start
 
-# 模块将在 http://localhost:3000 运行
+# 独立运行时模块将在 http://localhost:3001 运行
 ```
 
 ### 3. 启动 sessions 模块
@@ -121,7 +124,7 @@ npm start
 cd Modules/sessions
 
 # 方式 1: 使用环境变量
-MESSAGE_BUS_URL=http://localhost:3000 npm start
+MESSAGE_BUS_URL=http://localhost:3200 npm start
 
 # 方式 2: 使用配置文件
 npm start
@@ -141,7 +144,7 @@ MESSAGE_BUS_URL=http://localhost:3200 npm start
 npm start
 
 # API 将在 http://localhost:3014 运行
-# 集成面板端口默认随机分配，并自动注册到 Platform Dashboard
+# 插件模式下页面统一由 Platform 暴露：/plugin/schedule/
 ```
 
 ## 配置优先级
@@ -156,13 +159,12 @@ npm start
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `MESSAGE_BUS_URL` | 消息总线地址 | `http://localhost:3000` |
-| `PLATFORM_CORE_PORT` | platform-core 端口 | `3000` |
+| `MESSAGE_BUS_URL` | 消息总线地址 | `http://localhost:3200` |
+| `PLATFORM_CORE_PORT` | platform-core 端口 | `3001` |
 | `PLATFORM_CORE_HOST` | platform-core 地址 | `127.0.0.1` |
 | `SESSIONS_PORT` | sessions 模块端口 | `3010` |
 | `SESSIONS_HOST` | sessions 模块地址 | `127.0.0.1` |
 | `SCHEDULE_PORT` | schedule 模块 API 端口 | `3014` |
-| `SCHEDULE_PANEL_PORT` | schedule 面板端口，`0` 为随机 | `0` |
 
 ## 验证配置
 
@@ -170,13 +172,13 @@ npm start
 
 ```bash
 # 检查消息总线状态
-curl http://localhost:3000/health
+curl http://localhost:3200/health
 
 # 查看订阅者
-curl http://localhost:3000/subscribers
+curl http://localhost:3200/subscribers
 
 # 检查模块健康状态
-curl http://localhost:3000/health
+curl http://localhost:3200/health
 curl http://localhost:3010/health
 ```
 

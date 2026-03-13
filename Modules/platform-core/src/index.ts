@@ -11,7 +11,6 @@
  */
 
 import { resolve } from 'node:path';
-import { cwd } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { ClaudeSdkService } from './services/ClaudeSdkService.js';
 import { SessionModel } from './models/Session.js';
@@ -37,14 +36,15 @@ export class PlatformCoreApp {
   private readonly messageController: MessageController;
   private readonly router: ReturnType<typeof createRouter>;
   private readonly moduleRoot: string;
+  private isInitialized = false;
 
-  constructor(config: ModuleConfig) {
+  constructor(config: ModuleConfig, options?: { moduleRoot?: string }) {
     this.config = config as Awaited<ReturnType<typeof getConfig>>;
     this.logger = createLogger(this.config.logLevel);
-    this.moduleRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    this.moduleRoot = options?.moduleRoot || resolve(fileURLToPath(new URL('..', import.meta.url)));
 
     // 获取数据目录路径
-    const dataDir = resolve(cwd(), 'runtime', 'data');
+    const dataDir = resolve(this.moduleRoot, 'runtime', 'data');
 
     // 初始化服务
     this.sdkService = new ClaudeSdkService();
@@ -126,9 +126,7 @@ export class PlatformCoreApp {
   async start(): Promise<void> {
     this.logger.info('Starting Platform Core Agent Module...');
 
-    // 初始化会话存储
-    await this.sessionModel.initialize();
-    this.logger.info('Session storage initialized');
+    await this.initialize();
 
     // 启动 HTTP 服务器
     const { port, host } = this.config;
@@ -151,11 +149,27 @@ export class PlatformCoreApp {
 
     // 取消所有活动查询
     this.sdkService.cancelAllQueries();
+    this.messageController.shutdown();
 
     // 停止 HTTP 服务器
     await this.router.close();
 
     this.logger.info('Platform Core Module stopped');
+  }
+
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    await this.sessionModel.initialize();
+    this.logger.info('Session storage initialized');
+    this.isInitialized = true;
+  }
+
+  async handleHttpRequest(subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<void> {
+    await this.initialize();
+    await this.router.handle(request, response, subPath);
   }
 
   /**
@@ -223,3 +237,35 @@ export { getConfig, loadConfig, loadConfigFromEnv } from './utils/Config.js';
 
 // 类型导入（用于 TypeScript）
 import type { ModuleConfig } from './types/index.js';
+
+export async function createPlugin(context: {
+  modulePath: string;
+  config: Record<string, unknown>;
+}): Promise<{
+  initialize: () => Promise<void>;
+  dispose: () => Promise<void>;
+  handleHttpRequest: (subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<boolean>;
+  getMetadata: () => { displayName: string; description: string; hasUi: false; homePath: string };
+}> {
+  const config = context.config as ModuleConfig;
+  const app = new PlatformCoreApp(config, { moduleRoot: context.modulePath });
+
+  return {
+    initialize: async () => {
+      await app.initialize();
+    },
+    dispose: async () => {
+      await app.stop();
+    },
+    handleHttpRequest: async (subPath, request, response) => {
+      await app.handleHttpRequest(subPath, request, response);
+      return true;
+    },
+    getMetadata: () => ({
+      displayName: 'Platform Core',
+      description: 'Claude SDK 查询、会话和消息回复能力',
+      hasUi: false,
+      homePath: '/health'
+    })
+  };
+}

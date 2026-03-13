@@ -5,12 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PlatformRuntime } from '../runtime/PlatformRuntime.js';
 import { createLogger } from '../utils/Logger.js';
-import type {
-  IntegrationPanelRegisterPayload,
-  IntegrationPanelRegistration,
-  IntegrationPanelUnregisterPayload,
-  MessageEnvelope
-} from '../types.js';
+import type { MessageEnvelope } from '../types.js';
 import { randomUUID } from 'node:crypto';
 
 interface SSEConnection {
@@ -30,7 +25,6 @@ export class ControlServer {
   private readonly startedAt = Date.now();
   private readonly logger;
   private readonly sseConnections = new Map<string, SSEConnection>();
-  private readonly integrationPanels = new Map<string, IntegrationPanelRegistration>();
   private readonly staticDir: string;
 
   constructor(
@@ -43,13 +37,6 @@ export class ControlServer {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = join(__filename, '..');
     this.staticDir = join(__dirname, '../../static');
-
-    this.runtime.getSupervisor().on('module:stopped', ({ moduleId }) => {
-      this.unregisterPanelsForModule(moduleId);
-    });
-    this.runtime.getSupervisor().on('module:failed', ({ moduleId }) => {
-      this.unregisterPanelsForModule(moduleId);
-    });
   }
 
   async listen(port: number, host: string): Promise<void> {
@@ -97,7 +84,15 @@ export class ControlServer {
     if (method === 'GET' && url.pathname === '/api/integrations') {
       this.sendJson(response, 200, {
         ok: true,
-        items: this.getIntegrationPanels()
+        items: this.getPluginPanels()
+      });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/plugins') {
+      this.sendJson(response, 200, {
+        ok: true,
+        items: this.runtime.getLoadedPlugins()
       });
       return;
     }
@@ -119,6 +114,18 @@ export class ControlServer {
       return;
     }
 
+    if (segments[0] === 'plugin' && segments[1]) {
+      const pluginId = decodeURIComponent(segments[1]);
+      const suffix = segments.slice(2).join('/');
+      const subPathname = suffix ? `/${suffix}` : '/';
+      const subPath = `${subPathname}${url.search}`;
+      const handled = await this.runtime.handlePluginRequest(pluginId, subPath, request, response);
+      if (!handled && !response.headersSent) {
+        this.sendJson(response, 404, { ok: false, error: `Plugin route not found: ${pluginId}${subPathname}` });
+      }
+      return;
+    }
+
     if (method === 'GET' && url.pathname === '/health') {
       this.sendJson(response, 200, {
         ok: true,
@@ -134,15 +141,7 @@ export class ControlServer {
         version: this.version,
         runtime: this.runtime.getStatus(),
         modules: this.runtime.getRegistry().getAllModules(),
-        processes: this.runtime.getSupervisor().getAllProcesses().map((item) => ({
-          moduleId: item.moduleId,
-          pid: item.process.pid,
-          restartCount: item.restartCount,
-          healthCheckFailures: item.healthCheckFailures,
-          startedAt: item.startedAt.toISOString(),
-          lastRestartAt: item.lastRestartAt?.toISOString(),
-          lastHealthCheckAt: item.lastHealthCheckAt?.toISOString()
-        }))
+        plugins: this.runtime.getLoadedPlugins()
       });
       return;
     }
@@ -273,7 +272,6 @@ export class ControlServer {
    */
   private getDashboardData() {
     const registry = this.runtime.getRegistry();
-    const supervisor = this.runtime.getSupervisor();
     const messageBus = this.runtime.getMessageBus();
 
     return {
@@ -294,20 +292,13 @@ export class ControlServer {
         registeredAt: m.registeredAt,
         startedAt: m.startedAt
       })),
-      processes: supervisor.getAllProcesses().map(p => ({
-        moduleId: p.moduleId,
-        pid: p.process.pid,
-        restartCount: p.restartCount,
-        healthCheckFailures: p.healthCheckFailures,
-        startedAt: p.startedAt.toISOString(),
-        lastRestartAt: p.lastRestartAt?.toISOString(),
-        lastHealthCheckAt: p.lastHealthCheckAt?.toISOString()
-      })),
+      processes: [],
       messages: {
         count: messageBus.getAllHistory().length,
         items: messageBus.getAllHistory().slice(-100) // Last 100 messages
       },
-      integrations: this.getIntegrationPanels(),
+      integrations: this.getPluginPanels(),
+      plugins: this.runtime.getLoadedPlugins(),
       subscribers: Array.from(this.sseConnections.values()).map(conn => ({
         module: conn.module,
         topics: conn.topics,
@@ -347,8 +338,6 @@ export class ControlServer {
         timeoutMs: timeoutMs as number | undefined,
         createdAt: new Date().toISOString()
       };
-
-      this.handleIntegrationMessage(envelope);
 
       // 通过消息总线发送
       this.runtime.getMessageBus().send(envelope);
@@ -468,92 +457,20 @@ export class ControlServer {
     }
   }
 
-  private handleIntegrationMessage(envelope: MessageEnvelope): void {
-    if (envelope.toModule !== 'platform') {
-      return;
-    }
-
-    if (envelope.action === 'integration_panel_register') {
-      this.registerIntegrationPanel(envelope.fromModule, envelope.payload);
-      return;
-    }
-
-    if (envelope.action === 'integration_panel_unregister') {
-      this.unregisterIntegrationPanel(envelope.fromModule, envelope.payload);
-    }
-  }
-
-  private registerIntegrationPanel(moduleId: string, payload: unknown): void {
-    if (!payload || typeof payload !== 'object') {
-      throw new Error('integration_panel_register payload must be an object');
-    }
-
-    const data = payload as IntegrationPanelRegisterPayload;
-    const panelId = typeof data.panelId === 'string' && data.panelId.trim() ? data.panelId.trim() : moduleId;
-    const name = typeof data.name === 'string' ? data.name.trim() : '';
-    const url = typeof data.url === 'string' ? data.url.trim() : '';
-    const token = typeof data.token === 'string' ? data.token.trim() : '';
-
-    if (!name || !url || !token) {
-      throw new Error('integration_panel_register requires name, url, token');
-    }
-
-    const parsedUrl = new URL(url);
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      throw new Error(`Unsupported integration panel protocol: ${parsedUrl.protocol}`);
-    }
-
-    parsedUrl.searchParams.set('token', token);
-
-    const existing = this.integrationPanels.get(panelId);
-    const now = new Date().toISOString();
-    this.integrationPanels.set(panelId, {
-      panelId,
-      moduleId,
-      name,
-      url,
-      token,
-      securedUrl: parsedUrl.toString(),
-      description: typeof data.description === 'string' && data.description.trim() ? data.description.trim() : undefined,
-      icon: typeof data.icon === 'string' && data.icon.trim() ? data.icon.trim() : undefined,
-      registeredAt: existing?.registeredAt || now,
-      updatedAt: now
-    });
-  }
-
-  private unregisterIntegrationPanel(moduleId: string, payload: unknown): void {
-    const data = payload && typeof payload === 'object'
-      ? payload as IntegrationPanelUnregisterPayload
-      : undefined;
-    const panelId = typeof data?.panelId === 'string' && data.panelId.trim() ? data.panelId.trim() : undefined;
-
-    if (panelId) {
-      const existing = this.integrationPanels.get(panelId);
-      if (existing?.moduleId === moduleId) {
-        this.integrationPanels.delete(panelId);
-      }
-      return;
-    }
-
-    this.unregisterPanelsForModule(moduleId);
-  }
-
-  private unregisterPanelsForModule(moduleId: string): void {
-    for (const [panelId, panel] of this.integrationPanels.entries()) {
-      if (panel.moduleId === moduleId) {
-        this.integrationPanels.delete(panelId);
-      }
-    }
-  }
-
-  private getIntegrationPanels(): IntegrationPanelRegistration[] {
-    return Array.from(this.integrationPanels.values()).sort((left, right) => {
-      const nameCompare = left.name.localeCompare(right.name, 'zh-CN');
-      if (nameCompare !== 0) {
-        return nameCompare;
-      }
-      return left.panelId.localeCompare(right.panelId, 'zh-CN');
-    });
+  private getPluginPanels() {
+    return this.runtime.getLoadedPlugins()
+      .filter((plugin) => plugin.hasUi)
+      .map((plugin) => ({
+        panelId: plugin.pluginId,
+        moduleId: plugin.moduleId,
+        name: plugin.displayName,
+        url: `${plugin.basePath}${plugin.homePath}`,
+        securedUrl: `${plugin.basePath}${plugin.homePath}`,
+        description: plugin.description,
+        icon: plugin.icon,
+        registeredAt: plugin.loadedAt || plugin.updatedAt,
+        updatedAt: plugin.updatedAt
+      }));
   }
 
   /**

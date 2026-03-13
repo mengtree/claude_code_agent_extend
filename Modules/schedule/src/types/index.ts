@@ -65,8 +65,6 @@ export interface HealthCheckResponse {
 export interface ScheduleModuleConfig {
   port: number;
   host: string;
-  panelPort: number;
-  panelHost: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   dataDir: string;
   messageBusURL?: string;

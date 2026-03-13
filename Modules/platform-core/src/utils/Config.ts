@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: ModuleConfig = {
   maxConcurrentSessions: 100,
   sessionPersistence: true,
   logLevel: 'info',
-  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3000'
+  messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3200'
 };
 
 /**

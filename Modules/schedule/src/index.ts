@@ -1,6 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
-import { cwd } from 'node:process';
-import { createModuleIntegrationHelper, type ModuleIntegrationHelper } from '@agent-platform/module-integration-helper';
+import { fileURLToPath } from 'node:url';
 import { ScheduleController } from './controllers/ScheduleController.js';
 import { HealthController } from './controllers/HealthController.js';
 import { MessageController } from './controllers/MessageController.js';
@@ -28,16 +27,20 @@ export class ScheduleApp {
   private readonly router: ReturnType<typeof createRouter>;
   private readonly panelServer: PanelServer;
   private readonly schedulerService: SchedulerService;
-  private integrationHelper?: ModuleIntegrationHelper;
   private isStopping = false;
+  private isInitialized = false;
+  private readonly routePrefix: string;
 
-  constructor(config: ScheduleModuleConfig) {
+  constructor(config: ScheduleModuleConfig, options?: { moduleRoot?: string; routePrefix?: string }) {
     this.config = config as Awaited<ReturnType<typeof getConfig>>;
     this.logger = createLogger(this.config.logLevel);
+    this.routePrefix = options?.routePrefix || '/plugin/schedule';
+
+    const moduleRoot = options?.moduleRoot || resolve(fileURLToPath(new URL('..', import.meta.url)));
 
     const dataDir = isAbsolute(this.config.dataDir)
       ? this.config.dataDir
-      : resolve(cwd(), this.config.dataDir);
+      : resolve(moduleRoot, this.config.dataDir);
 
     this.scheduleStore = new ScheduleStore(dataDir, this.config.claimTimeoutMs);
     this.scheduleController = new ScheduleController(this.scheduleStore);
@@ -80,33 +83,17 @@ export class ScheduleApp {
       this.logger,
       this.config.scanIntervalMs
     );
-    this.panelServer = new PanelServer(this.getApiBaseUrl());
+    this.panelServer = new PanelServer(`${this.routePrefix}/api`);
 
     this.setupMessageHandlers();
   }
 
   async start(): Promise<void> {
-    await this.scheduleStore.initialize();
+    await this.initialize();
     await this.router.listen(this.config.port, this.config.host);
-    await this.panelServer.listen(this.config.panelPort, this.config.panelHost);
-
-    this.integrationHelper = createModuleIntegrationHelper({
-      moduleId: 'schedule',
-      sendToBus: async (config) => this.messageController.sendToBus(config),
-      logger: this.logger,
-      panel: {
-        name: 'Schedule 定时任务面板',
-        url: this.panelServer.getBaseUrl(this.config.panelHost)
-      }
-    });
-    this.panelServer.setIntegrationHelper(this.integrationHelper);
-
-    await this.integrationHelper.register();
-    this.schedulerService.start();
     this.setupGracefulShutdown();
 
     this.logger.info(`Schedule API started on ${this.getApiBaseUrl()}`);
-    this.logger.info(`Schedule panel started on ${this.panelServer.getBaseUrl(this.config.panelHost)}`);
   }
 
   async stop(): Promise<void> {
@@ -117,15 +104,36 @@ export class ScheduleApp {
     this.isStopping = true;
     this.schedulerService.stop();
 
-    try {
-      await this.integrationHelper?.unregister();
-    } catch (error) {
-      this.logger.warn('[schedule] Failed to unregister integration panel:', error);
+    this.messageController.shutdown();
+    await this.router.close();
+  }
+
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
     }
 
-    this.messageController.shutdown();
-    await this.panelServer.close();
-    await this.router.close();
+    await this.scheduleStore.initialize();
+    this.schedulerService.start();
+    this.isInitialized = true;
+  }
+
+  async handleHttpRequest(subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<boolean> {
+    await this.initialize();
+
+    const pathOnly = subPath.split('?')[0] || '/';
+    if (pathOnly === '/' || pathOnly === '/index.html') {
+      await this.panelServer.render(response);
+      return true;
+    }
+
+    if (pathOnly.startsWith('/api')) {
+      const rewrittenPath = subPath.replace(/^\/api(?=\/|$)/, '') || '/';
+      await this.router.handle(request, response, rewrittenPath);
+      return true;
+    }
+
+    return false;
   }
 
   private setupMessageHandlers(): void {
@@ -246,7 +254,49 @@ async function main(): Promise<void> {
   await app.start();
 }
 
-main().catch((error) => {
-  console.error('Failed to start Schedule Module:', error);
-  process.exit(1);
-});
+function isDirectRun(): boolean {
+  if (!process.argv[1]) {
+    return false;
+  }
+
+  return resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+}
+
+if (isDirectRun()) {
+  main().catch((error) => {
+    console.error('Failed to start Schedule Module:', error);
+    process.exit(1);
+  });
+}
+
+export async function createPlugin(context: {
+  modulePath: string;
+  routePrefix: string;
+  config: Record<string, unknown>;
+}): Promise<{
+  initialize: () => Promise<void>;
+  dispose: () => Promise<void>;
+  handleHttpRequest: (subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<boolean>;
+  getMetadata: () => { displayName: string; description: string; hasUi: true; homePath: string };
+}> {
+  const app = new ScheduleApp(context.config as ScheduleModuleConfig, {
+    moduleRoot: context.modulePath,
+    routePrefix: context.routePrefix
+  });
+
+  return {
+    initialize: async () => {
+      await app.initialize();
+    },
+    dispose: async () => {
+      await app.stop();
+    },
+    handleHttpRequest: async (subPath, request, response) => app.handleHttpRequest(subPath, request, response),
+    getMetadata: () => ({
+      displayName: 'Schedule 定时任务面板',
+      description: '延迟任务与周期任务管理插件',
+      hasUi: true,
+      homePath: '/'
+    })
+  };
+}

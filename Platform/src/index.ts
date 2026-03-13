@@ -16,6 +16,8 @@ class PlatformApp {
     this.logger = createLogger(config.logLevel);
     this.runtime = createPlatformRuntime({
       modulesRoot: config.modulesRoot,
+      host: config.host,
+      port: config.port,
       healthCheckInterval: config.healthCheckInterval,
       maxRestarts: config.maxRestarts,
       restartBackoffMs: config.restartBackoffMs,
@@ -28,8 +30,8 @@ class PlatformApp {
 
   async start(): Promise<void> {
     this.logger.info('[PlatformApp] Starting platform bus...');
-    await this.runtime.start();
     await this.controlServer.listen(this.config.port, this.config.host);
+    await this.runtime.start();
     this.logger.info(`[PlatformApp] Control plane started at http://${this.config.host}:${this.config.port}`);
     this.setupGracefulShutdown();
   }
@@ -81,6 +83,7 @@ export { PlatformApp, VERSION };
 export * from './types.js';
 export { ModuleRegistry } from './registry/ModuleRegistry.js';
 export { MessageBus, createMessageBus } from './messaging/MessageBus.js';
+export { PluginManager } from './plugins/PluginManager.js';
 export { ModuleSupervisor } from './supervisor/ModuleSupervisor.js';
 export { PlatformRuntime, createPlatformRuntime } from './runtime/PlatformRuntime.js';
 export { ControlServer } from './control/ControlServer.js';

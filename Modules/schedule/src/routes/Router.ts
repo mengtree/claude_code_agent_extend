@@ -19,7 +19,7 @@ export class Router {
   async listen(port: number, host: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       this.server = createServer((request, response) => {
-        void this.handleRequest(request, response).catch((error) => {
+        void this.handle(request, response).catch((error) => {
           if (!response.headersSent) {
             response.statusCode = 500;
             response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -44,8 +44,12 @@ export class Router {
     this.server = null;
   }
 
-  private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  async handle(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    await this.handleRequest(request, response, rawUrl);
+  }
+
+  private async handleRequest(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    const url = new URL(rawUrl || request.url || '/', `http://${request.headers.host || 'localhost'}`);
     const method = request.method?.toUpperCase() || 'GET';
     const path = url.pathname;
 

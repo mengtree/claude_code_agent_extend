@@ -39,12 +39,7 @@ export class Router {
     }
 
     this.server = createServer(async (request, response) => {
-      try {
-        await this.handleRequest(request, response);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.sendJson(response, 500, { error: message, ok: false });
-      }
+      await this.handle(request, response);
     });
 
     // 启动服务器并立即返回（不阻塞）
@@ -74,11 +69,20 @@ export class Router {
     }
   }
 
+  async handle(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    try {
+      await this.handleRequest(request, response, rawUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.sendJson(response, 500, { error: message, ok: false });
+    }
+  }
+
   /**
    * 处理请求
    */
-  private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  private async handleRequest(request: IncomingMessage, response: ServerResponse, rawUrl?: string): Promise<void> {
+    const url = new URL(rawUrl || request.url || '/', `http://${request.headers.host || 'localhost'}`);
     const method = (request.method || 'GET').toUpperCase();
     const pathSegments = url.pathname.split('/').filter(s => s.length > 0);
 

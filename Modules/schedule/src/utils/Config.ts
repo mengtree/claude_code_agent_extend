@@ -6,8 +6,6 @@ const CONFIG_PATH = process.env.SCHEDULE_CONFIG || './config.json';
 const DEFAULT_CONFIG: ScheduleModuleConfig = {
   port: 3015,
   host: '127.0.0.1',
-  panelPort: 0,
-  panelHost: '127.0.0.1',
   logLevel: 'info',
   dataDir: './runtime/data',
   messageBusURL: process.env.MESSAGE_BUS_URL || 'http://localhost:3200',
@@ -37,17 +35,6 @@ export function loadConfigFromEnv(): Partial<ScheduleModuleConfig> {
 
   if (process.env.SCHEDULE_HOST) {
     config.host = process.env.SCHEDULE_HOST;
-  }
-
-  if (process.env.SCHEDULE_PANEL_PORT) {
-    const panelPort = Number.parseInt(process.env.SCHEDULE_PANEL_PORT, 10);
-    if (!Number.isNaN(panelPort)) {
-      config.panelPort = panelPort;
-    }
-  }
-
-  if (process.env.SCHEDULE_PANEL_HOST) {
-    config.panelHost = process.env.SCHEDULE_PANEL_HOST;
   }
 
   if (process.env.SCHEDULE_LOG_LEVEL) {

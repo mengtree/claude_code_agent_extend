@@ -11,9 +11,7 @@
  */
 
 import { isAbsolute, resolve } from 'node:path';
-import { cwd } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { createModuleIntegrationHelper, type ModuleIntegrationHelper } from '@agent-platform/module-integration-helper';
 import { SessionModel } from './models/Session.js';
 import { SessionController } from './controllers/SessionController.js';
 import { HealthController } from './controllers/HealthController.js';
@@ -42,21 +40,24 @@ export class SessionsApp {
   private readonly asyncMessageService: AsyncMessageService;
   private readonly sseManager: SSEManager;
   private readonly router: ReturnType<typeof createRouter>;
-  private readonly integrationHelper: ModuleIntegrationHelper;
   private isStopping = false;
+  private isInitialized = false;
+  private readonly routePrefix: string;
 
-  constructor(config: SessionsConfig) {
+  constructor(config: SessionsConfig, options?: { moduleRoot?: string; routePrefix?: string; platformBaseUrl?: string }) {
     this.config = config as Awaited<ReturnType<typeof getConfig>>;
     this.logger = createLogger(this.config.logLevel);
+    this.routePrefix = options?.routePrefix || '/plugin/sessions';
+    const moduleRoot = options?.moduleRoot || resolve(fileURLToPath(new URL('..', import.meta.url)));
 
     // 获取数据目录路径
     const dataDir = isAbsolute(this.config.dataDir)
       ? this.config.dataDir
-      : resolve(cwd(), this.config.dataDir);
+      : resolve(moduleRoot, this.config.dataDir);
 
     // 初始化模型
     this.sessionModel = new SessionModel({ dataDir });
-    this.platformCoreClient = new PlatformCoreMessageClient(this.config.platformCoreUrl);
+    this.platformCoreClient = new PlatformCoreMessageClient(options?.platformBaseUrl || this.config.platformCoreUrl);
 
     // 初始化异步消息服务
     this.asyncMessageService = new AsyncMessageService(
@@ -89,19 +90,7 @@ export class SessionsApp {
       autoSubscribe: true
     });
 
-    this.integrationHelper = createModuleIntegrationHelper({
-      moduleId: 'sessions',
-      sendToBus: async (config) => {
-        return this.messageController.sendToBus(config);
-      },
-      logger: this.logger,
-      panel: {
-        name: 'Sessions 对话面板',
-        url: this.getPlaygroundBaseUrl()
-      }
-    });
-
-    this.playgroundController = new PlaygroundController(this.integrationHelper);
+    this.playgroundController = new PlaygroundController(this.routePrefix);
 
     // 设置消息处理
     this.setupMessageHandlers();
@@ -221,9 +210,7 @@ export class SessionsApp {
   async start(): Promise<void> {
     this.logger.info('Starting Sessions Module...');
 
-    // 初始化会话存储
-    await this.sessionModel.initialize();
-    this.logger.info('Session storage initialized');
+    await this.initialize();
 
     // 启动 HTTP 服务器
     const { port, host } = this.config;
@@ -232,11 +219,9 @@ export class SessionsApp {
 
     await this.router.listen(port, host);
 
-    await this.registerIntegrationPanel();
-
     this.logger.info(`Sessions Module started on http://${host}:${port}`);
     this.logger.info(`Health check: http://${host}:${port}/health`);
-    this.logger.info(`Playground: ${this.getPlaygroundUrl()}`);
+  this.logger.info(`Playground: ${this.routePrefix}`);
     this.logger.info(`Platform Core Messages: ${this.config.platformCoreUrl}/messages`);
     this.logger.info('Ready to accept requests');
 
@@ -255,12 +240,6 @@ export class SessionsApp {
     this.isStopping = true;
     this.logger.info('Stopping Sessions Module...');
 
-    try {
-      await this.unregisterIntegrationPanel();
-    } catch (error) {
-      this.logger.warn('Failed to unregister integration panel:', error);
-    }
-
     // 停止 HTTP 服务器
     await this.router.close();
 
@@ -276,20 +255,20 @@ export class SessionsApp {
     this.logger.info('Sessions Module stopped');
   }
 
-  private getPlaygroundBaseUrl(): string {
-    return `http://${this.config.host}:${this.config.port}/playground`;
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    await this.sessionModel.initialize();
+    this.logger.info('Session storage initialized');
+    this.isInitialized = true;
   }
 
-  private getPlaygroundUrl(): string {
-    return this.integrationHelper.getSecuredUrl();
-  }
-
-  private async registerIntegrationPanel(): Promise<void> {
-    await this.integrationHelper.register();
-  }
-
-  private async unregisterIntegrationPanel(): Promise<void> {
-    await this.integrationHelper.unregister();
+  async handleHttpRequest(subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<boolean> {
+    await this.initialize();
+    await this.router.handle(request, response, subPath);
+    return true;
   }
 
   /**
@@ -352,3 +331,37 @@ export { MessageController } from './controllers/MessageController.js';
 export { createRouter } from './routes/Router.js';
 export { createLogger } from './utils/Logger.js';
 export { getConfig, loadConfig, loadConfigFromEnv } from './utils/Config.js';
+
+export async function createPlugin(context: {
+  modulePath: string;
+  routePrefix: string;
+  platformBaseUrl: string;
+  config: Record<string, unknown>;
+}): Promise<{
+  initialize: () => Promise<void>;
+  dispose: () => Promise<void>;
+  handleHttpRequest: (subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<boolean>;
+  getMetadata: () => { displayName: string; description: string; hasUi: true; homePath: string };
+}> {
+  const app = new SessionsApp(context.config as SessionsConfig, {
+    moduleRoot: context.modulePath,
+    routePrefix: context.routePrefix,
+    platformBaseUrl: context.platformBaseUrl
+  });
+
+  return {
+    initialize: async () => {
+      await app.initialize();
+    },
+    dispose: async () => {
+      await app.stop();
+    },
+    handleHttpRequest: async (subPath, request, response) => app.handleHttpRequest(subPath, request, response),
+    getMetadata: () => ({
+      displayName: 'Sessions 对话面板',
+      description: '会话管理与异步对话插件',
+      hasUi: true,
+      homePath: '/playground'
+    })
+  };
+}

@@ -8,6 +8,14 @@
     "command": "node",
     "args": ["dist/index.js"]
   },
+  "plugin": {
+    "entry": "dist/index.js",
+    "basePath": "/plugin/schedule",
+    "homePath": "/",
+    "displayName": "Schedule 定时任务面板",
+    "description": "延迟任务与周期任务管理插件",
+    "hasUi": true
+  },
   "startup": {
     "autoStart": true,
     "daemon": true,
@@ -31,16 +39,6 @@
       "host": {
         "type": "string",
         "description": "API 服务监听地址",
-        "default": "127.0.0.1"
-      },
-      "panelPort": {
-        "type": "number",
-        "description": "集成面板端口，0 表示随机可用端口",
-        "default": 0
-      },
-      "panelHost": {
-        "type": "string",
-        "description": "集成面板监听地址",
         "default": "127.0.0.1"
       },
       "messageBusURL": {

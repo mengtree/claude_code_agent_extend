@@ -1,28 +1,25 @@
 import { createMessageBus, type MessageBus } from '../messaging/MessageBus.js';
 import { ModuleRegistry } from '../registry/ModuleRegistry.js';
-import { ModuleSupervisor } from '../supervisor/ModuleSupervisor.js';
-import type { MessageEnvelope, PlatformRuntimeOptions, PlatformRuntimeStatus } from '../types.js';
+import { PluginManager } from '../plugins/PluginManager.js';
+import type { LoadedPluginInfo, MessageEnvelope, PlatformRuntimeOptions, PlatformRuntimeStatus } from '../types.js';
 import { createLogger } from '../utils/Logger.js';
 
 export class PlatformRuntime {
   private readonly logger;
   private readonly registry: ModuleRegistry;
   private readonly messageBus: MessageBus;
-  private readonly supervisor: ModuleSupervisor;
+  private readonly pluginManager: PluginManager;
   private isStarted = false;
 
   constructor(options: PlatformRuntimeOptions) {
     this.logger = createLogger(options.logLevel || 'info');
     this.registry = new ModuleRegistry({ modulesRoot: options.modulesRoot });
     this.messageBus = createMessageBus({ maxHistorySize: options.maxMessageHistory });
-    this.supervisor = new ModuleSupervisor({
+    this.pluginManager = new PluginManager({
       registry: this.registry,
-      healthCheckInterval: options.healthCheckInterval,
-      maxRestarts: options.maxRestarts,
-      restartBackoffMs: options.restartBackoffMs,
+      host: options.host || '127.0.0.1',
+      port: options.port || 3200,
       logLevel: options.logLevel,
-      moduleStartDelayMs: options.moduleStartDelayMs,
-      startupDelayMs: options.startupDelayMs
     });
   }
 
@@ -35,8 +32,8 @@ export class PlatformRuntime {
     this.logger.info(`[PlatformRuntime] Registered ${count} modules`);
 
     this.setupMessageRouting();
-    this.setupSupervisorEvents();
-    await this.supervisor.start();
+    this.setupPluginEvents();
+    await this.pluginManager.start();
 
     this.isStarted = true;
     this.logger.info('[PlatformRuntime] Started');
@@ -47,21 +44,23 @@ export class PlatformRuntime {
       return;
     }
 
-    await this.supervisor.stop();
+    await this.pluginManager.stop();
     this.isStarted = false;
     this.logger.info('[PlatformRuntime] Stopped');
   }
 
   async startModule(moduleId: string): Promise<number> {
-    return this.supervisor.startModule(moduleId);
+    await this.pluginManager.loadPlugin(moduleId);
+    return 0;
   }
 
   async stopModule(moduleId: string): Promise<boolean> {
-    return this.supervisor.stopModule(moduleId);
+    return this.pluginManager.unloadPlugin(moduleId);
   }
 
   async restartModule(moduleId: string): Promise<number> {
-    return this.supervisor.restartModule(moduleId);
+    await this.pluginManager.reloadPlugin(moduleId);
+    return 0;
   }
 
   send(envelope: Omit<MessageEnvelope, 'messageId' | 'createdAt'>): string {
@@ -83,8 +82,16 @@ export class PlatformRuntime {
     return this.messageBus;
   }
 
-  getSupervisor(): ModuleSupervisor {
-    return this.supervisor;
+  getPluginManager(): PluginManager {
+    return this.pluginManager;
+  }
+
+  getLoadedPlugins(): LoadedPluginInfo[] {
+    return this.pluginManager.getLoadedPlugins();
+  }
+
+  async handlePluginRequest(moduleId: string, subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<boolean> {
+    return this.pluginManager.handleHttpRequest(moduleId, subPath, request, response);
   }
 
   getStatus(): PlatformRuntimeStatus {
@@ -92,7 +99,7 @@ export class PlatformRuntime {
       isStarted: this.isStarted,
       modules: this.registry.getStats(),
       messaging: this.messageBus.getStats(),
-      processes: this.supervisor.getStats()
+      plugins: this.pluginManager.getStats()
     };
   }
 
@@ -104,25 +111,13 @@ export class PlatformRuntime {
     }
   }
 
-  private setupSupervisorEvents(): void {
-    this.supervisor.on('module:started', ({ moduleId, pid }) => {
-      this.logger.info(`[Module] ${moduleId} started (PID: ${pid})`);
+  private setupPluginEvents(): void {
+    this.pluginManager.on('plugin:loaded', ({ moduleId }) => {
+      this.logger.info(`[Plugin] ${moduleId} loaded`);
     });
 
-    this.supervisor.on('module:stopped', ({ moduleId, exitCode }) => {
-      this.logger.info(`[Module] ${moduleId} stopped (exit code: ${exitCode})`);
-    });
-
-    this.supervisor.on('module:restarted', ({ moduleId, restartCount }) => {
-      this.logger.warn(`[Module] ${moduleId} restarted (${restartCount} times)`);
-    });
-
-    this.supervisor.on('module:failed', ({ moduleId, error }) => {
-      this.logger.error(`[Module] ${moduleId} failed: ${error}`);
-    });
-
-    this.supervisor.on('module:unhealthy', ({ moduleId }) => {
-      this.logger.warn(`[Module] ${moduleId} is unhealthy`);
+    this.pluginManager.on('plugin:unloaded', ({ moduleId }) => {
+      this.logger.info(`[Plugin] ${moduleId} unloaded`);
     });
   }
 }

@@ -12,6 +12,7 @@ export interface SkillEntry {
 export interface ModuleRegistryEntry {
   moduleId: string;
   manifest: ModuleManifest;
+  moduleConfig: Record<string, unknown>;
   skillContent: string;
   modulePath: string;
   status: ModuleStatus;
@@ -68,11 +69,13 @@ export class ModuleRegistry {
   async registerModule(modulePath: string): Promise<ModuleRegistryEntry> {
     const manifestPath = join(modulePath, 'module.json');
     const manifest = await this.readManifest(manifestPath);
+    const moduleConfig = await this.readModuleConfig(modulePath);
     const skill = await this.readSkill(modulePath, manifest.moduleId);
 
     const entry: ModuleRegistryEntry = {
       moduleId: manifest.moduleId,
       manifest,
+      moduleConfig,
       skillContent: skill.content,
       modulePath,
       status: 'registered',
@@ -171,5 +174,22 @@ export class ModuleRegistry {
       moduleId,
       content: `# ${moduleId}\n\nNo skill file found under skills/.`
     };
+  }
+
+  private async readModuleConfig(modulePath: string): Promise<Record<string, unknown>> {
+    const configPath = join(modulePath, 'config.json');
+    if (!existsSync(configPath)) {
+      return {};
+    }
+
+    try {
+      const content = await readFile(configPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      return parsed && typeof parsed === 'object'
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
   }
 }

@@ -62,6 +62,15 @@ export interface ModuleManifest {
     nodejs?: string;
     npm?: string[];
   };
+  plugin?: {
+    entry?: string;
+    basePath?: string;
+    homePath?: string;
+    displayName?: string;
+    description?: string;
+    icon?: string;
+    hasUi?: boolean;
+  };
 }
 
 export interface ModuleCapability {
@@ -94,33 +103,42 @@ export interface MessageEnvelope {
   inReplyTo?: string;
 }
 
-export interface IntegrationPanelRegistration {
-  panelId: string;
-  moduleId: string;
-  name: string;
-  url: string;
-  token: string;
-  securedUrl: string;
+export type MessageHandler = (envelope: MessageEnvelope) => void | Promise<void>;
+
+export interface PlatformPluginMetadata {
+  pluginId: string;
+  displayName: string;
   description?: string;
   icon?: string;
-  registeredAt: string;
+  hasUi: boolean;
+  basePath: string;
+  homePath: string;
+}
+
+export interface PlatformPluginContext {
+  moduleId: string;
+  modulePath: string;
+  manifest: ModuleManifest;
+  config: Record<string, unknown>;
+  routePrefix: string;
+  platformBaseUrl: string;
+  messageBusUrl: string;
+}
+
+export interface PlatformPlugin {
+  initialize?(): Promise<void>;
+  dispose?(): Promise<void>;
+  handleHttpRequest?(subPath: string, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<boolean | void>;
+  getMetadata?(): Partial<Omit<PlatformPluginMetadata, 'pluginId' | 'basePath'>>;
+}
+
+export interface LoadedPluginInfo extends PlatformPluginMetadata {
+  moduleId: string;
+  version: string;
+  status: ModuleStatus;
+  loadedAt?: string;
   updatedAt: string;
 }
-
-export interface IntegrationPanelRegisterPayload {
-  panelId?: string;
-  name: string;
-  url: string;
-  token: string;
-  description?: string;
-  icon?: string;
-}
-
-export interface IntegrationPanelUnregisterPayload {
-  panelId?: string;
-}
-
-export type MessageHandler = (envelope: MessageEnvelope) => void | Promise<void>;
 
 export interface ModuleRegistryOptions {
   modulesRoot: string;
@@ -153,6 +171,8 @@ export interface PlatformConfig {
 
 export interface PlatformRuntimeOptions {
   modulesRoot: string;
+  host?: string;
+  port?: number;
   maxMessageHistory?: number;
   healthCheckInterval?: number;
   maxRestarts?: number;
@@ -177,9 +197,8 @@ export interface PlatformRuntimeStatus {
     pendingRequests: number;
     historySize: number;
   };
-  processes: {
-    runningModules: number;
-    totalRestarts: number;
-    unhealthyModules: number;
+  plugins: {
+    loaded: number;
+    withUi: number;
   };
 }

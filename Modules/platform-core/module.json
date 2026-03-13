@@ -8,6 +8,14 @@
     "command": "node",
     "args": ["dist/index.js"]
   },
+  "plugin": {
+    "entry": "dist/index.js",
+    "basePath": "/plugin/platform-core",
+    "homePath": "/health",
+    "displayName": "Platform Core",
+    "description": "Claude SDK 查询、会话和消息回复能力",
+    "hasUi": false
+  },
   "startup": {
     "autoStart": true,
     "daemon": true,

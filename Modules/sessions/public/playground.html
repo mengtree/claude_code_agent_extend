@@ -520,7 +520,7 @@
 
   <script>
     const state = {
-      baseUrl: window.location.origin,
+      baseUrl: '__SESSIONS_BASE_URL__',
       sessions: [],
       selectedSessionId: null,
       selectedSession: null,
@@ -568,11 +568,17 @@
 
     function getBaseUrl() {
       const value = elements.baseUrlInput.value.trim();
-      return value || window.location.origin;
+      return value || new URL(state.baseUrl || '/', window.location.origin).toString();
+    }
+
+    function buildUrl(path) {
+      const normalizedBase = getBaseUrl().replace(/\/?$/, '/');
+      const normalizedPath = String(path || '').replace(/^\//, '');
+      return new URL(normalizedPath, normalizedBase).toString();
     }
 
     async function api(path, options) {
-      const url = new URL(path, getBaseUrl()).toString();
+      const url = buildUrl(path);
       const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json' },
         ...options
@@ -791,8 +797,8 @@
     function ensureSSEConnection() {
       if (state.sseConnection || !state.selectedSessionId) return;
 
-      const url = new URL('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/events', getBaseUrl());
-      state.sseConnection = new EventSource(url.toString());
+      const url = buildUrl('/sessions/' + encodeURIComponent(state.selectedSessionId) + '/events');
+      state.sseConnection = new EventSource(url);
 
       state.sseConnection.addEventListener('message', event => {
         try {
