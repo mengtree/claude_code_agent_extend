@@ -12,7 +12,7 @@ SMTP_USE_TLS = False                 # 是否使用 TLS 加密
 
 # ==================== 发件人账户配置 ====================
 EMAIL_FROM = "timemotion@163.com"  # 发件人邮箱地址
-EMAIL_PASSWORD = "EXRvmWpjWeRuMbJk"  # 邮箱密码或授权码
+EMAIL_PASSWORD = ""  # 邮箱密码或授权码
 
 # ==================== 默认配置（可选） ====================
 DEFAULT_TO = ""                     # 默认收件人邮箱
